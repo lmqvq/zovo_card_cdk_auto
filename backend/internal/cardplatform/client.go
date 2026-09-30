@@ -366,6 +366,7 @@ type IssuedCDK struct {
 	Plan           string `json:"plan"`
 	CodePrefix     string `json:"code_prefix"`
 	FeeAmountMinor int64  `json:"fee_amount_minor"`
+	PaymentCountry string `json:"payment_country"`
 }
 
 type IssueCDKResult struct {
@@ -506,6 +507,7 @@ type CDKListItem struct {
 	FullCode       string `json:"full_code"`
 	CodePrefix     string `json:"code_prefix"`
 	Status         string `json:"status"`
+	PaymentCountry string `json:"payment_country"`
 	FeeAmountMinor int64  `json:"fee_amount_minor"`
 	CreatedAt      string `json:"created_at"`
 }
@@ -612,6 +614,7 @@ func (c *Client) SyncUpstreamFullCodes(ctx context.Context, status, plan string,
 			out.Scanned++
 			code := it.FullCodeText()
 			if code == "" {
+				_ = db.UpdateCardplatformCDKRegion(it.ID, it.PaymentCountry)
 				out.PrefixOnly++
 				continue
 			}
@@ -620,7 +623,7 @@ func (c *Client) SyncUpstreamFullCodes(ctx context.Context, status, plan string,
 				prefix = code[:14]
 			}
 			_, existed := db.LookupCardplatformCDKCode(it.ID, prefix)
-			if err := db.SaveCardplatformCDKCodeWithStatus(it.ID, code, prefix, it.Plan, it.FeeAmountMinor, it.Status); err != nil {
+			if err := db.SaveCardplatformCDKCodeWithStatus(it.ID, code, prefix, it.Plan, it.FeeAmountMinor, it.Status, it.PaymentCountry); err != nil {
 				continue
 			}
 			if existed {
@@ -630,6 +633,7 @@ func (c *Client) SyncUpstreamFullCodes(ctx context.Context, status, plan string,
 			out.Codes = append(out.Codes, IssuedCDK{
 				ID: it.ID, Code: code, Plan: it.Plan,
 				CodePrefix: prefix, FeeAmountMinor: it.FeeAmountMinor,
+				PaymentCountry: it.PaymentCountry,
 			})
 		}
 		if page*100 >= res.Total {

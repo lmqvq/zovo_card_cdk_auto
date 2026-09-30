@@ -260,6 +260,11 @@
         <el-table-column prop="plan" label="套餐" width="100">
           <template #default="{ row }">{{ planLabel(row.plan) }}</template>
         </el-table-column>
+        <el-table-column label="区域" min-width="145">
+          <template #default="{ row }">
+            <span :class="row.payment_country == null ? 'text-muted' : ''">{{ cdkRegionLabel(row.payment_country) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
             <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
@@ -372,6 +377,13 @@ const REGION_NAMES: Record<string, string> = {
 // 没收录的国家码原样显示——比显示空白好，新地区不必等这份表补齐就能用。
 function regionLabel(code: string): string {
   return REGION_NAMES[code] || code
+}
+function cdkRegionLabel(country: unknown): string {
+  if (country == null) return '待同步'
+  const code = String(country).trim().toUpperCase()
+  if (!code) return '默认（菲律宾）'
+  const name = regionLabel(code)
+  return name === code ? code : `${name} (${code})`
 }
 const issuing = ref(false)
 const issueError = ref('')

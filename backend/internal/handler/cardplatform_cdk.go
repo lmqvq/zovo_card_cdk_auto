@@ -207,8 +207,7 @@ func CardPlatformIssueCDKs(c *gin.Context) {
 	if len(issuePrefs) > 0 {
 		prefNote = " pref=" + issuePrefs[0].Issuer + "/" + issuePrefs[0].SegmentKey
 	}
-	// 地区进审计：这批码按哪个区发的，事后只能从这里查——
-	// 码本身在本站只存码文，地区留在卡台那边。
+	// 地区同时记录到发码审计和本站完整码缓存。
 	if payCountry != "" {
 		prefNote += " region=" + payCountry
 	}
@@ -224,7 +223,8 @@ func CardPlatformIssueCDKs(c *gin.Context) {
 			issued = append(issued, gin.H{
 				"id": it.ID, "code": "", "plan": it.Plan,
 				"code_prefix": prefix, "fee_amount_minor": it.FeeAmountMinor,
-				"incomplete": true, "stored": false,
+				"payment_country": payCountry,
+				"incomplete":      true, "stored": false,
 			})
 			continue
 		}
@@ -233,7 +233,7 @@ func CardPlatformIssueCDKs(c *gin.Context) {
 		}
 		// 本站 SQLite 持久化完整码（卡台列表只回 prefix）
 		storedOK := false
-		if err := db.SaveCardplatformCDKCode(it.ID, code, prefix, it.Plan, it.FeeAmountMinor); err != nil {
+		if err := db.SaveCardplatformCDKCode(it.ID, code, prefix, it.Plan, it.FeeAmountMinor, payCountry); err != nil {
 			storeFailed++
 			log.Printf("[cdk-issue] save full code failed id=%d prefix=%s: %v", it.ID, prefix, err)
 		} else {
@@ -243,10 +243,11 @@ func CardPlatformIssueCDKs(c *gin.Context) {
 		issued = append(issued, gin.H{
 			"id": it.ID, "code": code, "plan": it.Plan,
 			"code_prefix": prefix, "fee_amount_minor": it.FeeAmountMinor,
-			"code_length":   len(code),
-			"full_code":     code,
-			"stored":        storedOK,
-			"has_full_code": true,
+			"payment_country": payCountry,
+			"code_length":     len(code),
+			"full_code":       code,
+			"stored":          storedOK,
+			"has_full_code":   true,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -412,7 +413,7 @@ func CardPlatformListStoredCDKs(c *gin.Context) {
 	}
 
 	// 当前页向卡台核对状态（仅本页 ID；bulk 大导出跳过以免拖慢）
-	statusMap := map[int64]string{}
+	metadata := map[int64]cardplatform.CDKListItem{}
 	if !skipSync && !bulkLegacy && len(list) > 0 && len(list) <= 200 {
 		ids := make([]int64, 0, len(list))
 		for _, it := range list {
@@ -420,7 +421,7 @@ func CardPlatformListStoredCDKs(c *gin.Context) {
 				ids = append(ids, it.UpstreamID)
 			}
 		}
-		statusMap = refreshStoredCDKStatuses(c.Request.Context(), ids)
+		metadata = refreshStoredCDKMetadata(c.Request.Context(), ids)
 	}
 
 	noteIDs := make([]int64, 0, len(list))
@@ -431,8 +432,12 @@ func CardPlatformListStoredCDKs(c *gin.Context) {
 	out := make([]gin.H, 0, len(list))
 	for _, it := range list {
 		st := it.Status
-		if s, ok := statusMap[it.UpstreamID]; ok && s != "" {
-			st = s
+		country := it.PaymentCountry
+		if current, ok := metadata[it.UpstreamID]; ok {
+			if current.Status != "" {
+				st = current.Status
+			}
+			country = &current.PaymentCountry
 		}
 		if st == "" {
 			st = "unused"
@@ -441,7 +446,8 @@ func CardPlatformListStoredCDKs(c *gin.Context) {
 			"id": it.UpstreamID, "code": it.Code, "full_code": it.Code,
 			"code_prefix": it.CodePrefix, "plan": it.Plan, "status": st,
 			"fee_amount_minor": it.FeeAmountMinor, "created_at": it.CreatedAt,
-			"has_full_code": true, "stored": true,
+			"payment_country": country,
+			"has_full_code":   true, "stored": true,
 			"note": notes[it.UpstreamID],
 		})
 	}
@@ -452,23 +458,19 @@ func CardPlatformListStoredCDKs(c *gin.Context) {
 		"page_size":          pageSize,
 		"full_code_in_store": db.CountCardplatformCDKCodes(),
 		"server_stored":      true,
-		"status_synced":      len(statusMap) > 0,
+		"status_synced":      len(metadata) > 0,
 	})
 }
 
-// refreshStoredCDKStatuses 按上游 id 轻量查询卡台状态并回写本站缓存。
-// 每页并发有限，避免整库扫描。
-func refreshStoredCDKStatuses(ctx context.Context, ids []int64) map[int64]string {
-	out := make(map[int64]string, len(ids))
+// refreshStoredCDKMetadata reuses current-page status requests to also cache
+// each CDK's creation region. No extra requests or full inventory scans.
+func refreshStoredCDKMetadata(ctx context.Context, ids []int64) map[int64]cardplatform.CDKListItem {
+	out := make(map[int64]cardplatform.CDKListItem, len(ids))
 	if len(ids) == 0 {
 		return out
 	}
 	cli := cardplatform.NewFromSettings()
-	type pair struct {
-		id int64
-		st string
-	}
-	ch := make(chan pair, len(ids))
+	ch := make(chan cardplatform.CDKListItem, len(ids))
 	sem := make(chan struct{}, 6)
 	var wg sync.WaitGroup
 	for _, id := range ids {
@@ -485,10 +487,11 @@ func refreshStoredCDKStatuses(ctx context.Context, ids []int64) map[int64]string
 				return
 			}
 			for _, it := range res.List {
-				if it.ID == id && strings.TrimSpace(it.Status) != "" {
-					st := strings.ToLower(strings.TrimSpace(it.Status))
-					_ = db.UpdateCardplatformCDKStatus(id, st)
-					ch <- pair{id: id, st: st}
+				if it.ID == id {
+					it.Status = strings.ToLower(strings.TrimSpace(it.Status))
+					it.PaymentCountry = strings.ToUpper(strings.TrimSpace(it.PaymentCountry))
+					_ = db.UpdateCardplatformCDKMetadata(id, it.Status, it.PaymentCountry)
+					ch <- it
 					return
 				}
 			}
@@ -499,7 +502,7 @@ func refreshStoredCDKStatuses(ctx context.Context, ids []int64) map[int64]string
 		close(ch)
 	}()
 	for p := range ch {
-		out[p.id] = p.st
+		out[p.ID] = p
 	}
 	return out
 }
@@ -628,6 +631,7 @@ func CardPlatformListCDKs(c *gin.Context) {
 		Plan           string `json:"plan"`
 		CodePrefix     string `json:"code_prefix"`
 		Status         string `json:"status"`
+		PaymentCountry string `json:"payment_country"`
 		FeeAmountMinor int64  `json:"fee_amount_minor"`
 		CreatedAt      string `json:"created_at"`
 		Code           string `json:"code,omitempty"`
@@ -647,15 +651,17 @@ func CardPlatformListCDKs(c *gin.Context) {
 		if !ok {
 			if up := it.FullCodeText(); up != "" {
 				full, ok = up, true
-				_ = db.SaveCardplatformCDKCodeWithStatus(it.ID, up, it.CodePrefix, it.Plan, it.FeeAmountMinor, it.Status)
+				_ = db.SaveCardplatformCDKCodeWithStatus(it.ID, up, it.CodePrefix, it.Plan, it.FeeAmountMinor, it.Status, it.PaymentCountry)
 			}
 		}
 		row := rowOut{
 			ID: it.ID, Plan: it.Plan, CodePrefix: it.CodePrefix, Status: it.Status,
+			PaymentCountry: strings.ToUpper(strings.TrimSpace(it.PaymentCountry)),
 			FeeAmountMinor: it.FeeAmountMinor, CreatedAt: it.CreatedAt,
 			HasFullCode: ok, Note: notes[it.ID],
 		}
 		if ok {
+			_ = db.UpdateCardplatformCDKRegion(it.ID, row.PaymentCountry)
 			row.Code = full
 			row.FullCode = full
 			withFull++
