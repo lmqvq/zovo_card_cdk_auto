@@ -45,3 +45,18 @@ func TestXCredentialsAreNotInvoiceSessions(t *testing.T) {
 		t.Fatal("cross product plan")
 	}
 }
+
+func TestXCatalogueCannotFallBackToGPTOnOldServers(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"code":0,"data":{"plans":{"plus":{"enabled":true,"currency":"PHP"}},"registry":[{"key":"plus","label":"ChatGPT Plus"}]}}`))
+	}))
+	defer s.Close()
+	p, err := New(Config{SiteBase: s.URL, APIKey: "fixture-key"}).GetPlans(context.Background(), "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.SellablePlans()) != 0 {
+		t.Fatal("X page offered GPT codes")
+	}
+}

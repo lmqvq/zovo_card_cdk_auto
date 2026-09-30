@@ -299,12 +299,17 @@ func (c *Client) GetPlans(ctx context.Context, products ...string) (*PlansRespon
 		out.Plans[k] = p
 	}
 	if product == "x" {
+		all := out.Plans
+		out.Plans = map[string]PlanInfo{}
+		registry := []PlanRegistryItem{}
 		for _, entry := range out.Registry {
-			if info, ok := out.Plans["x_"+entry.Key]; ok {
+			if info, ok := all["x_"+entry.Key]; ok && IsXPremiumPlan(entry.Key) {
 				info.Key = entry.Key
 				out.Plans[entry.Key] = info
+				registry = append(registry, entry)
 			}
 		}
+		out.Registry = registry
 		out.PaymentRegions = []PaymentRegion{{Country: "JP", Currency: "JPY"}}
 	}
 	return out, nil

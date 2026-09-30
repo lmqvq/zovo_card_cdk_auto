@@ -1191,6 +1191,21 @@ func docsDefaultPlans() map[string]cardplatform.SellablePlan {
 
 // 公开展示服务费参考价（不暴露 API Key；若未配置 Key 则返回文档默认价）
 func PublicCDKPlans(c *gin.Context) {
+	if c.Query("product") == "x" {
+		// X has no safe GPT fallback catalogue, including on old upstreams.
+		plans, err := cardplatform.NewFromSettings().GetPlans(c.Request.Context(), "x")
+		if err != nil {
+			writeCardErr(c, err)
+			return
+		}
+		rows := plans.SellablePlans()
+		items := map[string]cardplatform.SellablePlan{}
+		for _, p := range rows {
+			items[p.Key] = p
+		}
+		c.JSON(http.StatusOK, gin.H{"version": plans.Version, "plans": items, "registry": rows, "payment_regions": plans.PaymentRegions})
+		return
+	}
 	cli := cardplatform.NewFromSettings()
 	cfg := cardplatform.LoadConfig()
 	if cfg.APIKey == "" {
