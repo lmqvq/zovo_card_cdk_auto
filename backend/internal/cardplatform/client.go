@@ -310,7 +310,16 @@ func (c *Client) GetPlans(ctx context.Context, products ...string) (*PlansRespon
 			}
 		}
 		out.Registry = registry
-		out.PaymentRegions = []PaymentRegion{{Country: "JP", Currency: "JPY"}}
+		regions := []PaymentRegion{}
+		for _, r := range out.PaymentRegions {
+			if country, err := XPaymentCountry(r.Country); err == nil && country == r.Country {
+				regions = append(regions, r)
+			}
+		}
+		if len(regions) == 0 {
+			regions = []PaymentRegion{{Country: "JP", Currency: "JPY"}}
+		}
+		out.PaymentRegions = regions
 	}
 	return out, nil
 }

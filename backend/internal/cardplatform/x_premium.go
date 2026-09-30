@@ -2,8 +2,21 @@ package cardplatform
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 )
+
+func XPaymentCountry(country string) (string, error) {
+	country = strings.ToUpper(strings.TrimSpace(country))
+	if country == "" {
+		country = "JP"
+	}
+	switch country {
+	case "US", "JP", "PH", "NG", "TR", "EG":
+		return country, nil
+	}
+	return "", errors.New("X supports US, JP, PH, NG, TR and EG only")
+}
 
 func IsXPremiumPlan(plan string) bool {
 	plan = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(plan)), "x_")

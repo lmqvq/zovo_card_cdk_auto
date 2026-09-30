@@ -86,9 +86,9 @@
                所以未选时不会显示下面那条 value="" 的选项，而是回落到内置英文
                placeholder「Select」——中文界面里突兀，更要命的是「不选就是菲律宾」
                这个信息在下拉展开前完全看不到，操作者会以为自己还没选地区。 -->
-          <el-select v-model="form.payment_country" :disabled="directProduct === 'x'" size="small" style="width: 150px"
-                     placeholder="默认(菲律宾)">
-            <el-option label="默认(菲律宾)" value="" />
+          <el-select v-model="form.payment_country" size="small" style="width: 150px"
+                     :placeholder="directProduct === 'x' ? '默认(日本)' : '默认(菲律宾)'">
+            <el-option v-if="directProduct !== 'x'" label="默认(菲律宾)" value="" />
             <el-option v-for="r in paymentRegions" :key="r.country"
                        :label="`${regionLabel(r.country)} (${r.currency})`" :value="r.country" />
           </el-select>
@@ -380,7 +380,7 @@ const form = reactive({
 // 多出来的地区发码被拒，少了的地区卡台支持了却选不到。
 const paymentRegions = ref<Array<{ country: string; currency: string }>>([])
 const REGION_NAMES: Record<string, string> = {
-  PH: '菲律宾', US: '美国', JP: '日本', CL: '智利', EG: '埃及', IN: '印度', KR: '韩国',
+  PH: '菲律宾', US: '美国', JP: '日本', CL: '智利', EG: '埃及', IN: '印度', KR: '韩国', NG: '尼日利亚', TR: '土耳其',
 }
 // 没收录的国家码原样显示——比显示空白好，新地区不必等这份表补齐就能用。
 function regionLabel(code: string): string {
@@ -1203,7 +1203,7 @@ async function loadMeta() {
       if (form.payment_country && !paymentRegions.value.some(r => r.country === form.payment_country)) {
         form.payment_country = directProduct.value === 'x' ? 'JP' : ''
       }
-      if (directProduct.value === 'x') form.payment_country = 'JP'
+      if (directProduct.value === 'x' && !form.payment_country) form.payment_country = 'JP'
       pricingVersion.value = d.version ?? null
       priceSource.value = 'live'
     } else {

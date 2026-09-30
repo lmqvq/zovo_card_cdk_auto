@@ -173,7 +173,12 @@ func CardPlatformIssueCDKs(c *gin.Context) {
 	pref, hasSitePref := issuePrefFromSite()
 	payCountry := strings.ToUpper(strings.TrimSpace(req.PaymentCountry))
 	if cardplatform.IsXPremiumPlan(plan) {
-		payCountry = "JP"
+		var regionErr error
+		payCountry, regionErr = cardplatform.XPaymentCountry(payCountry)
+		if regionErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": regionErr.Error()})
+			return
+		}
 	}
 	// ★没有本站选卡配置时也要把地区带上★：地区和选卡偏好是两件独立的事，
 	// 用同一个 pref 结构只是顺路。写成「有选卡配置才传 pref」会让

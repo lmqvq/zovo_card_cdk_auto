@@ -13,7 +13,7 @@ func TestXPremiumCatalogueIsProductScoped(t *testing.T) {
 			t.Errorf("wrong product request %s", r.URL.String())
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"code":0,"data":{"version":1,"plans":{"x_basic_monthly":{"enabled":true,"currency":"JPY","serviceFeeUsdMinor":15}},"registry":[{"key":"basic_monthly","label":"X Basic","flow":"direct"}]}}`))
+		w.Write([]byte(`{"code":0,"data":{"version":1,"payment_regions":[{"country":"JP","currency":"JPY"},{"country":"NG","currency":"NGN"},{"country":"TR","currency":"TRY"},{"country":"CL","currency":"CLP"}],"plans":{"x_basic_monthly":{"enabled":true,"currency":"JPY","serviceFeeUsdMinor":15}},"registry":[{"key":"basic_monthly","label":"X Basic","flow":"direct"}]}}`))
 	}))
 	defer s.Close()
 	c := New(Config{SiteBase: s.URL, APIKey: "fixture-key"})
@@ -25,7 +25,7 @@ func TestXPremiumCatalogueIsProductScoped(t *testing.T) {
 	if len(rows) != 1 || rows[0].Key != "basic_monthly" || rows[0].ServiceFeeUsdMinor != 15 {
 		t.Fatalf("bad X catalogue %+v", rows)
 	}
-	if len(plans.PaymentRegions) != 1 || plans.PaymentRegions[0].Country != "JP" {
+	if len(plans.PaymentRegions) != 3 || plans.PaymentRegions[1].Country != "NG" || plans.PaymentRegions[2].Country != "TR" {
 		t.Fatal("wrong X region")
 	}
 }
@@ -43,6 +43,20 @@ func TestXCredentialsAreNotInvoiceSessions(t *testing.T) {
 	}
 	if IsXPremiumPlan("plus") || IsXPremiumPlan("grok_plus_monthly") {
 		t.Fatal("cross product plan")
+	}
+}
+
+func TestXPaymentCountries(t *testing.T) {
+	for _, cc := range []string{"US", "JP", "PH", "NG", "TR", "EG"} {
+		if c, err := XPaymentCountry(cc); err != nil || c != cc {
+			t.Fatal(cc, err)
+		}
+	}
+	if c, err := XPaymentCountry(""); err != nil || c != "JP" {
+		t.Fatal("default changed")
+	}
+	if _, err := XPaymentCountry("CL"); err == nil {
+		t.Fatal("X Chile allowed")
 	}
 }
 
