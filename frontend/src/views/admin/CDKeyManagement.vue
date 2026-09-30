@@ -35,6 +35,11 @@
       </div>
     </div>
 
+    <label class="text-sm">{{ t('xPremium.product') }}
+      <select v-model="directProduct" class="input !w-48" :disabled="issuing || loadingMeta" @change="loadMeta">
+        <option value="gpt">ChatGPT</option><option value="x">X Premium</option>
+      </select>
+    </label>
     <div v-if="metaError" class="alert alert-error">{{ metaError }}</div>
     <el-button v-if="!configured" type="warning" size="small" @click="$router.push('/ops/integration')">
       去配置 API Key
@@ -81,7 +86,7 @@
                所以未选时不会显示下面那条 value="" 的选项，而是回落到内置英文
                placeholder「Select」——中文界面里突兀，更要命的是「不选就是菲律宾」
                这个信息在下拉展开前完全看不到，操作者会以为自己还没选地区。 -->
-          <el-select v-model="form.payment_country" size="small" style="width: 150px"
+          <el-select v-model="form.payment_country" :disabled="directProduct === 'x'" size="small" style="width: 150px"
                      placeholder="默认(菲律宾)">
             <el-option label="默认(菲律宾)" value="" />
             <el-option v-for="r in paymentRegions" :key="r.country"
@@ -320,6 +325,8 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { authFetch } from '../../lib/api'
 import { dialog } from '../../lib/dialog'
@@ -350,6 +357,7 @@ const selectedRows = ref<any[]>([])
 const tableRef = ref<any>(null)
 const issueOpen = ref(false)
 
+const directProduct = ref('gpt')
 const plans = ref<Record<string, any>>({})
 const pricingVersion = ref<number | null>(null)
 const priceSource = ref('—')
@@ -1168,7 +1176,7 @@ async function loadMeta() {
   metaError.value = ''
   try {
     const [pr, br, er, sr] = await Promise.all([
-      authFetch('/api/v1/admin/cardplatform/plans'),
+      authFetch(`/api/v1/admin/cardplatform/plans?product=${directProduct.value}`),
       authFetch('/api/v1/admin/cardplatform/balance'),
       authFetch('/api/v1/admin/network/egress'),
       authFetch('/api/v1/admin/settings'),
@@ -1193,8 +1201,9 @@ async function loadMeta() {
       // 卡台不再下发某个地区时，把已选中的收回到「默认」——
       // 否则表单会一直带着一个卡台已经不认的国家码，发码时才被拒。
       if (form.payment_country && !paymentRegions.value.some(r => r.country === form.payment_country)) {
-        form.payment_country = ''
+        form.payment_country = directProduct.value === 'x' ? 'JP' : ''
       }
+      if (directProduct.value === 'x') form.payment_country = 'JP'
       pricingVersion.value = d.version ?? null
       priceSource.value = 'live'
     } else {

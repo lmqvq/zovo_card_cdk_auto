@@ -225,8 +225,16 @@ type PlansResponse struct {
 
 // GetPlans GET /gpt-direct/plans — 实时服务费与套餐开关
 // 卡台返回 PaymentConfig：version + plans[key].serviceFeeUsdMinor
-func (c *Client) GetPlans(ctx context.Context) (*PlansResponse, error) {
-	data, err := c.doOpenAPI(ctx, http.MethodGet, "/gpt-direct/plans", nil, "")
+func (c *Client) GetPlans(ctx context.Context, products ...string) (*PlansResponse, error) {
+	product := "gpt"
+	if len(products) > 0 && products[0] == "x" {
+		product = "x"
+	}
+	path := "/gpt-direct/plans"
+	if product == "x" {
+		path += "?product=x"
+	}
+	data, err := c.doOpenAPI(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return nil, err
 	}
@@ -289,6 +297,15 @@ func (c *Client) GetPlans(ctx context.Context) (*PlansResponse, error) {
 		p.MinAmountMinor = jsonInt64(m, "minAmountMinor", "min_amount_minor")
 		p.MaxAmountMinor = jsonInt64(m, "maxAmountMinor", "max_amount_minor")
 		out.Plans[k] = p
+	}
+	if product == "x" {
+		for _, entry := range out.Registry {
+			if info, ok := out.Plans["x_"+entry.Key]; ok {
+				info.Key = entry.Key
+				out.Plans[entry.Key] = info
+			}
+		}
+		out.PaymentRegions = []PaymentRegion{{Country: "JP", Currency: "JPY"}}
 	}
 	return out, nil
 }

@@ -37,17 +37,18 @@
 
       <!-- 2 preflight -->
       <div v-show="step === 2" class="card space-y-4">
-        <h2 class="text-xl font-bold text-ink">ChatGPT 凭证</h2>
-        <div class="flex gap-2">
+        <h2 class="text-xl font-bold text-ink">{{ isXPremiumPlan(targetPlan) ? t('xPremium.credential') : 'ChatGPT 凭证' }}</h2>
+        <div v-if="!isXPremiumPlan(targetPlan)" class="flex gap-2">
           <button type="button" class="btn-secondary !py-1" :class="{ 'ring-2': credMode === 'session' }" @click="credMode = 'session'">Session</button>
           <button type="button" class="btn-secondary !py-1" :class="{ 'ring-2': credMode === 'mailbox' }" @click="credMode = 'mailbox'">邮箱</button>
         </div>
         <template v-if="credMode === 'session'">
-          <p class="text-sm text-muted">打开
+          <p v-if="isXPremiumPlan(targetPlan)" class="text-sm text-muted">{{ t('xPremium.hint') }}</p>
+          <p v-else class="text-sm text-muted">打开
             <a class="app-link" href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener">chatgpt.com/api/auth/session</a>
             复制<strong>完整 JSON</strong>（必须含 <code>sessionToken</code>）。已禁用纯 Access Token。
           </p>
-          <textarea v-model="sessionRaw" class="input h-36 font-mono text-xs" placeholder='{"user":{...},"accessToken":"eyJ...","sessionToken":"eyJ...五段JWE..."}' />
+          <textarea v-model="sessionRaw" class="input h-36 font-mono text-xs" :placeholder="isXPremiumPlan(targetPlan) ? t('xPremium.placeholder') : 'Session JSON (sessionToken)'" />
         </template>
         <template v-else>
           <input v-model="email" class="input" placeholder="email@outlook.com" />
@@ -223,6 +224,7 @@
 </template>
 
 <script setup lang="ts">
+import { isXPremiumPlan, xPremiumCredential } from '../../lib/x-premium'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
@@ -767,6 +769,7 @@ async function doPreview() {
     // 兼容多种返回结构
     redemptionToken.value = data.redemption_token || data.data?.redemption_token || data.token || ''
     previewInfo.value = data.data || data
+    if (isXPremiumPlan(String(previewInfo.value?.plan || ''))) credMode.value = 'session'
     if (!redemptionToken.value) {
       // 有的实现把 token 放在顶层其它字段
       error.value = '未返回 redemption_token，请检查卡台 Base 配置'
@@ -787,9 +790,9 @@ async function doPreflight() {
   try {
     let credential: any
     if (credMode.value === 'session') {
-      const session = extractSession(sessionRaw.value)
+      const session = isXPremiumPlan(targetPlan.value) ? xPremiumCredential(sessionRaw.value) : extractSession(sessionRaw.value)
       if (!session) {
-        error.value = '请粘贴完整 Session JSON（必须含 sessionToken），不能只用 Access Token'
+        error.value = isXPremiumPlan(targetPlan.value) ? t('xPremium.invalid') : '请粘贴完整 Session JSON（必须含 sessionToken），不能只用 Access Token'
         return
       }
       credential = { mode: 'session', session }

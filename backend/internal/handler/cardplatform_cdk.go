@@ -59,7 +59,7 @@ func writeCardErr(c *gin.Context, err error) {
 // 实时套餐服务费（CDK 收费价）
 func CardPlatformPlans(c *gin.Context) {
 	cli := cardplatform.NewFromSettings()
-	plans, err := cli.GetPlans(c.Request.Context())
+	plans, err := cli.GetPlans(c.Request.Context(), c.Query("product"))
 	if err != nil {
 		writeCardErr(c, err)
 		return
@@ -126,7 +126,11 @@ func CardPlatformIssueCDKs(c *gin.Context) {
 	// 按 SellableKeys 校验，跟界面上能看到的是同一份，不会出现「看得见发不出」
 	// 或者「发得出兑不掉」。
 	if cli := cardplatform.NewFromSettings(); cli != nil {
-		if plans, err := cli.GetPlans(c.Request.Context()); err == nil && plans != nil && len(plans.Plans) > 0 {
+		product := "gpt"
+		if cardplatform.IsXPremiumPlan(plan) {
+			product = "x"
+		}
+		if plans, err := cli.GetPlans(c.Request.Context(), product); err == nil && plans != nil && len(plans.Plans) > 0 {
 			sellable := plans.SellableKeys()
 			if len(sellable) > 0 && !sellable[plan] {
 				known := make([]string, 0, len(sellable))
@@ -168,6 +172,9 @@ func CardPlatformIssueCDKs(c *gin.Context) {
 	var issuePrefs []cardplatform.IssueCardPref
 	pref, hasSitePref := issuePrefFromSite()
 	payCountry := strings.ToUpper(strings.TrimSpace(req.PaymentCountry))
+	if cardplatform.IsXPremiumPlan(plan) {
+		payCountry = "JP"
+	}
 	// ★没有本站选卡配置时也要把地区带上★：地区和选卡偏好是两件独立的事，
 	// 用同一个 pref 结构只是顺路。写成「有选卡配置才传 pref」会让
 	// 「没配选卡、但指定了智利」这种组合静默退回菲律宾——码发出去了，
@@ -994,7 +1001,7 @@ func PublicCDKPreflight(c *gin.Context) {
 		}
 	}
 	sess := extractCredentialSession(body["credential"])
-	if sess != "" && (code != "" || tok != "") {
+	if sess != "" && !cardplatform.IsXPremiumCredential(sess) && (code != "" || tok != "") {
 		if err := db.BindCDKSession(code, tok, sess); err != nil {
 			log.Printf("[cdk-preflight] bind session failed code=%s tok=%s: %v", code, shortTok(tok), err)
 		}
@@ -1196,7 +1203,7 @@ func PublicCDKPlans(c *gin.Context) {
 		})
 		return
 	}
-	plans, err := cli.GetPlans(c.Request.Context())
+	plans, err := cli.GetPlans(c.Request.Context(), c.Query("product"))
 	if err != nil {
 		// 降级文档默认
 		c.JSON(http.StatusOK, gin.H{
