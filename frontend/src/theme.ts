@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 
 export type ThemeMode = 'light' | 'dark' | 'auto'
 export type SkinId =
+  | 'zovo'
   | 'terracotta'
   | 'ember'
   | 'ocean'
@@ -40,9 +41,36 @@ export interface SkinMeta {
   /** 主色，用于同步 Element Plus */
   primary: string
   primaryOn?: string
+  /** 亮色模式下另用一套主色（同一皮肤明暗两套配色时，如卡台新版 曜夜/流金） */
+  primaryLight?: string
+  primaryOnLight?: string
+  /** 该皮肤用到的 Google 字体（css2 family 参数），切换皮肤时按需加载 */
+  fonts: string[]
 }
 
+// 各皮肤共用的等宽字体（金额、卡密、表格数字）
+const MONO_FONT = 'JetBrains+Mono:wght@400;500;600'
+const SERIF_SC = 'Noto+Serif+SC:wght@500;600;700'
+
 export const SKINS: SkinMeta[] = [
+  {
+    // 与卡台新版 UI 同一套设计语言：夜间=曜夜（深黑 + 雾金），日间=流金（象牙 + 暗金）
+    id: 'zovo',
+    label: '卡台新版',
+    labelEn: 'ZovoCard',
+    swatch: '#cbb079',
+    swatch2: '#0c0c11',
+    blurb: '曜夜雾金 · 玻璃面板 · 与卡台新版一致',
+    heading: 'display',
+    density: 'comfy',
+    nav: 'pill',
+    layout: 'top',
+    primary: '#cbb079',
+    primaryOn: '#07070a',
+    primaryLight: '#9c7c3c',
+    primaryOnLight: '#fffdf7',
+    fonts: ['Manrope:wght@400;500;600;700', 'Sora:wght@500;600;700', 'Cormorant+Garamond:wght@500;600;700', SERIF_SC],
+  },
   {
     id: 'terracotta',
     label: '赤陶奶油',
@@ -55,6 +83,7 @@ export const SKINS: SkinMeta[] = [
     nav: 'pill',
     layout: 'top',
     primary: '#c0563a',
+    fonts: ['Inter:wght@400;500;600;700', 'Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700', SERIF_SC],
   },
   {
     id: 'cyber',
@@ -70,6 +99,7 @@ export const SKINS: SkinMeta[] = [
     preferDark: true,
     primary: '#22d3ee',
     primaryOn: '#041016',
+    fonts: ['DM+Sans:wght@400;500;600;700', 'Space+Grotesk:wght@500;600;700'],
   },
   {
     id: 'ocean',
@@ -83,6 +113,7 @@ export const SKINS: SkinMeta[] = [
     nav: 'block',
     layout: 'top',
     primary: '#2563eb',
+    fonts: ['Inter:wght@400;500;600;700', 'Outfit:wght@500;600;700'],
   },
   {
     id: 'ember',
@@ -98,6 +129,7 @@ export const SKINS: SkinMeta[] = [
     preferDark: true,
     primary: '#ff854a',
     primaryOn: '#1a0c08',
+    fonts: ['Inter:wght@400;500;600;700', 'Space+Grotesk:wght@500;600;700'],
   },
   {
     id: 'forest',
@@ -111,6 +143,7 @@ export const SKINS: SkinMeta[] = [
     nav: 'pill',
     layout: 'top',
     primary: '#059669',
+    fonts: ['Inter:wght@400;500;600;700', 'Outfit:wght@500;600;700'],
   },
   {
     id: 'violet',
@@ -124,6 +157,7 @@ export const SKINS: SkinMeta[] = [
     nav: 'underline',
     layout: 'top',
     primary: '#7c3aed',
+    fonts: ['Inter:wght@400;500;600;700', 'Space+Grotesk:wght@500;600;700'],
   },
   {
     id: 'slate',
@@ -137,6 +171,7 @@ export const SKINS: SkinMeta[] = [
     nav: 'block',
     layout: 'rail',
     primary: '#475569',
+    fonts: ['DM+Sans:wght@400;500;600;700'],
   },
   {
     id: 'rose',
@@ -150,6 +185,7 @@ export const SKINS: SkinMeta[] = [
     nav: 'underline',
     layout: 'top',
     primary: '#e11d48',
+    fonts: ['Inter:wght@400;500;600;700', 'Instrument+Serif:ital@0;1', 'Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700', SERIF_SC],
   },
   {
     id: 'noir',
@@ -165,6 +201,7 @@ export const SKINS: SkinMeta[] = [
     preferDark: true,
     primary: '#fafafa',
     primaryOn: '#0a0a0a',
+    fonts: ['DM+Sans:wght@400;500;600;700', 'Space+Grotesk:wght@500;600;700'],
   },
   {
     id: 'paper',
@@ -178,15 +215,17 @@ export const SKINS: SkinMeta[] = [
     nav: 'underline',
     layout: 'top',
     primary: '#8b5e34',
+    fonts: ['Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700', SERIF_SC],
   },
 ]
 
 function readSkin(): SkinId {
   const v = localStorage.getItem(SKIN_KEY) as SkinId
-  return SKINS.some((s) => s.id === v) ? v : 'terracotta'
+  return SKINS.some((s) => s.id === v) ? v : 'zovo'
 }
 
-export const themeMode = ref<ThemeMode>((localStorage.getItem(MODE_KEY) as ThemeMode) || 'light')
+// 默认：卡台新版 + 夜间（与 index.html 首屏脚本、后端 /public/site 默认值保持一致）
+export const themeMode = ref<ThemeMode>((localStorage.getItem(MODE_KEY) as ThemeMode) || 'dark')
 export const siteSkin = ref<SkinId>(readSkin())
 
 function loadBrand(): SiteBrand {
@@ -237,16 +276,18 @@ function mixHex(hex: string, toward: 'white' | 'black', t: number): string {
   return `#${[r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('')}`
 }
 
-function syncElementPlus(primary: string, primaryOn: string) {
+function syncElementPlus(primary: string, primaryOn: string, dark: boolean) {
   const root = document.documentElement
   const set = (k: string, v: string) => root.style.setProperty(k, v)
+  // 「浅色阶梯」是标签/选中行等的底色：暗色下要往黑混，往白混会在深底上冒出一块块近白色
+  const toward = dark ? 'black' : 'white'
   set('--el-color-primary', primary)
-  set('--el-color-primary-light-3', mixHex(primary, 'white', 0.3))
-  set('--el-color-primary-light-5', mixHex(primary, 'white', 0.5))
-  set('--el-color-primary-light-7', mixHex(primary, 'white', 0.7))
-  set('--el-color-primary-light-8', mixHex(primary, 'white', 0.8))
-  set('--el-color-primary-light-9', mixHex(primary, 'white', 0.9))
-  set('--el-color-primary-dark-2', mixHex(primary, 'black', 0.2))
+  set('--el-color-primary-light-3', mixHex(primary, toward, 0.3))
+  set('--el-color-primary-light-5', mixHex(primary, toward, 0.5))
+  set('--el-color-primary-light-7', mixHex(primary, toward, 0.7))
+  set('--el-color-primary-light-8', mixHex(primary, toward, 0.8))
+  set('--el-color-primary-light-9', mixHex(primary, toward, 0.9))
+  set('--el-color-primary-dark-2', mixHex(primary, dark ? 'white' : 'black', 0.2))
   // 按钮跟主色，禁止写死赤陶
   set('--el-button-bg-color', primary)
   set('--el-button-border-color', primary)
@@ -261,7 +302,8 @@ function syncElementPlus(primary: string, primaryOn: string) {
   // 同步语义色给 EP
   set('--el-bg-color', 'var(--surface)')
   set('--el-bg-color-page', 'var(--bg)')
-  set('--el-bg-color-overlay', 'var(--surface)')
+  // 弹层（下拉/弹窗/提示）必须不透明：玻璃质感皮肤的 --surface 是半透明的
+  set('--el-bg-color-overlay', 'var(--surface-solid)')
   set('--el-fill-color-blank', 'var(--surface)')
   set('--el-text-color-primary', 'var(--ink)')
   set('--el-text-color-regular', 'var(--ink-2)')
@@ -289,9 +331,30 @@ function applySkin() {
   if (meta.preferDark && themeMode.value === 'light') {
     // 允许 light，但皮肤 CSS 本身已是暗色 token；不强制改 mode
   }
-  syncElementPlus(meta.primary, meta.primaryOn || '#ffffff')
-  // 强制重绘部分 EP 组件缓存
-  root.style.colorScheme = isDark() || meta.preferDark ? 'dark' : 'light'
+  const dark = isDark() || !!meta.preferDark
+  const primary = !dark && meta.primaryLight ? meta.primaryLight : meta.primary
+  const primaryOn = !dark && meta.primaryOnLight ? meta.primaryOnLight : (meta.primaryOn || '#ffffff')
+  syncElementPlus(primary, primaryOn, dark)
+  root.style.colorScheme = dark ? 'dark' : 'light'
+  ensureSkinFonts(meta)
+}
+
+// 字体按皮肤按需加载：原来 index.html 一次拉 9 个字族（含中文 Noto Sans/Serif SC）且阻塞渲染。
+// 不阻塞首屏：字体到了再换（display=swap），没到之前用系统字体。
+const loadedFontHref = new Set<string>()
+function ensureSkinFonts(meta: SkinMeta) {
+  const families = [...meta.fonts, MONO_FONT].map((f) => `family=${f}`).join('&')
+  const href = `https://fonts.googleapis.com/css2?${families}&display=swap`
+  if (loadedFontHref.has(href) || document.querySelector(`link[data-skin-fonts="${meta.id}"]`)) {
+    loadedFontHref.add(href)
+    return
+  }
+  loadedFontHref.add(href)
+  const link = document.createElement('link')
+  link.rel = 'stylesheet'
+  link.href = href
+  link.dataset.skinFonts = meta.id
+  document.head.appendChild(link)
 }
 
 /** 统一入口：皮肤 + 明暗 一次刷完 */

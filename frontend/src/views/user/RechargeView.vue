@@ -983,7 +983,7 @@ function resetAll() {
 .account-facts dt {
   margin: 0;
   font-size: 12px;
-  color: var(--muted, #6b7280);
+  color: var(--ink-3);
 }
 .account-facts dd {
   margin: 2px 0 0;
