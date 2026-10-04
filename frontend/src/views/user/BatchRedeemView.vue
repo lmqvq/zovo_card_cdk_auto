@@ -1115,7 +1115,7 @@ async function handleAutoSubmitAll() {
   autoSubmitting.value = false
 }
 
-function exportBatchSuccess() {
+async function exportBatchSuccess() {
   const ok = items.value.filter((i) => i.status === 'success')
   if (!ok.length) {
     sessionError.value = '本批尚无成功记录'
@@ -1123,9 +1123,13 @@ function exportBatchSuccess() {
   }
   sessionError.value = ''
   const part = (value: string) => String(value || '').replace(/[\r\n]+/g, ' ').trim()
-  exportSuccessWorkbook(
-    ok.map((i) => [part(i.email), part(i.gptPassword), part(i.emailPassword), part(i.accessToken)]),
-  )
+  try {
+    await exportSuccessWorkbook(
+      ok.map((i) => [part(i.email), part(i.gptPassword), part(i.emailPassword), part(i.accessToken)]),
+    )
+  } catch {
+    sessionError.value = '导出失败，请重试'
+  }
 }
 
 function resetAll() {
