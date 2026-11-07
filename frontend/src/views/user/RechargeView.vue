@@ -39,7 +39,47 @@
             <a class="app-link" href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener">chatgpt.com/api/auth/session</a>
             复制<strong>完整 JSON</strong>（必须含 <code>sessionToken</code>）。已禁用纯 Access Token。
           </p>
-          <textarea v-model="sessionRaw" class="input h-36 font-mono text-xs" :placeholder="isGrok ? t('grok.placeholder') : isXPremiumPlan(targetPlan) ? t('xPremium.placeholder') : 'Session JSON (sessionToken)'" />
+          <input
+            ref="sessionFileInput"
+            class="sr-only"
+            type="file"
+            :accept="SESSION_FILE_ACCEPT"
+            @change="onSessionFileChange"
+          />
+          <div
+            class="session-dropzone"
+            :class="{ 'is-dragging': isSessionDragActive }"
+            @dragenter.prevent="onSessionDragEnter"
+            @dragover.prevent="onSessionDragOver"
+            @dragleave.prevent="onSessionDragLeave"
+            @drop.prevent="onSessionFileDrop"
+          >
+            <textarea
+              v-model="sessionRaw"
+              class="input h-36 font-mono text-xs"
+              :placeholder="isGrok ? t('grok.placeholder') : isXPremiumPlan(targetPlan) ? t('xPremium.placeholder') : 'Session JSON (sessionToken)'"
+              @input="sessionFileName = ''"
+            />
+            <div v-if="isSessionDragActive" class="session-drop-overlay" aria-hidden="true">
+              {{ t('recharge.fileDropActive') }}
+            </div>
+          </div>
+          <div class="session-file-actions">
+            <button
+              type="button"
+              class="btn-secondary session-file-button"
+              :disabled="busy || readingSessionFile"
+              @click="openSessionFilePicker"
+            >
+              <el-icon><Document /></el-icon>
+              {{ readingSessionFile ? t('recharge.fileReading') : t('recharge.fileButton') }}
+            </button>
+            <span v-if="sessionFileName" class="text-xs text-muted break-all">
+              {{ t('recharge.fileLoaded', { name: sessionFileName }) }}
+            </span>
+          </div>
+          <p class="text-xs text-muted">{{ t('recharge.fileHint') }}</p>
+          <p class="text-xs text-subtle">{{ t('recharge.filePrivacy') }}</p>
         </template>
         <template v-else>
           <input v-model="email" class="input" placeholder="email@outlook.com" />
@@ -48,7 +88,7 @@
         <div v-if="error" class="alert alert-error">{{ error }}</div>
         <div class="flex gap-3">
           <button class="btn-secondary flex-1" @click="step = 1">上一步</button>
-          <button class="btn-primary flex-1" :disabled="busy" @click="doPreflight">{{ busy ? '预检中…' : '预检' }}</button>
+          <button class="btn-primary flex-1" :disabled="busy || readingSessionFile" @click="doPreflight">{{ busy ? '预检中…' : '预检' }}</button>
         </div>
       </div>
 
@@ -232,6 +272,11 @@ import UserPageHeader from '../../components/UserPageHeader.vue'
 import RedeemModeTabs from '../../components/RedeemModeTabs.vue'
 import { dialog } from '../../lib/dialog'
 import { planLabel, planSatisfied as isSatisfied } from '../../lib/plan'
+import {
+  SESSION_FILE_ACCEPT,
+  SessionFileError,
+  readSessionFile,
+} from '../../lib/session-file'
 
 const { t } = useI18n({ useScope: 'global' })
 const route = useRoute()
@@ -251,6 +296,11 @@ const grokSession = ref('')
 const grokBlockingReason = ref('')
 const credMode = ref<'session' | 'mailbox'>('session')
 const sessionRaw = ref('')
+const sessionFileInput = ref<HTMLInputElement | null>(null)
+const sessionFileName = ref('')
+const readingSessionFile = ref(false)
+const isSessionDragActive = ref(false)
+let sessionDragDepth = 0
 const email = ref('')
 const password = ref('')
 /** 预检成功后的账号/订阅摘要（与卡台 GPT 直充 preflight 字段对齐） */
@@ -476,6 +526,80 @@ function invalidatePreflight() {
   clearAccount()
 }
 watch([code, sessionRaw, email, password, credMode], invalidatePreflight, { flush: 'sync' })
+
+function hasFileDrag(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types || []).includes('Files')
+}
+
+function onSessionDragEnter(event: DragEvent) {
+  if (!hasFileDrag(event)) return
+  sessionDragDepth += 1
+  isSessionDragActive.value = true
+}
+
+function onSessionDragOver(event: DragEvent) {
+  if (hasFileDrag(event)) isSessionDragActive.value = true
+}
+
+function onSessionDragLeave() {
+  sessionDragDepth = Math.max(0, sessionDragDepth - 1)
+  if (sessionDragDepth === 0) isSessionDragActive.value = false
+}
+
+function resetSessionDrag() {
+  sessionDragDepth = 0
+  isSessionDragActive.value = false
+}
+
+function openSessionFilePicker() {
+  if (busy.value || readingSessionFile.value) return
+  sessionFileInput.value?.click()
+}
+
+function fileReadErrorMessage(error: unknown): string {
+  if (!(error instanceof SessionFileError)) return t('recharge.fileErrors.read')
+  const messages: Record<SessionFileError['code'], string> = {
+    too_large: t('recharge.fileErrors.tooLarge'),
+    unsupported: t('recharge.fileErrors.unsupported'),
+    empty: t('recharge.fileErrors.empty'),
+    invalid_docx: t('recharge.fileErrors.invalidDocx'),
+    read_failed: t('recharge.fileErrors.read'),
+  }
+  return messages[error.code]
+}
+
+async function loadSessionFile(file: File | null) {
+  if (!file) return
+  readingSessionFile.value = true
+  error.value = ''
+  sessionFileName.value = ''
+  try {
+    sessionRaw.value = await readSessionFile(file)
+    sessionFileName.value = file.name
+  } catch (cause) {
+    error.value = fileReadErrorMessage(cause)
+  } finally {
+    readingSessionFile.value = false
+  }
+}
+
+function onSessionFileChange(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const file = input?.files?.[0] || null
+  if (input) input.value = ''
+  void loadSessionFile(file)
+}
+
+function onSessionFileDrop(event: DragEvent) {
+  resetSessionDrag()
+  const files = event.dataTransfer?.files
+  if (!files?.length) return
+  if (files.length > 1) {
+    error.value = t('recharge.fileErrors.multiple')
+    return
+  }
+  void loadSessionFile(files[0])
+}
 
 const alreadySatisfied = computed(() => {
   if (!account.value.checked || !targetPlan.value) return false
@@ -796,7 +920,7 @@ async function doPreview() {
 }
 
 async function doPreflight() {
-  if (busy.value || recoveringSubscription.value) return
+  if (busy.value || recoveringSubscription.value || readingSessionFile.value) return
   invalidatePreflight()
   const sequence = preflightSequence
   error.value = ''
@@ -967,6 +1091,7 @@ onMounted(() => {
 
 function resetAll() {
   invalidatePreflight()
+  resetSessionDrag()
   if (pollTimer) clearInterval(pollTimer)
   clearProgress()
   step.value = 1
@@ -984,6 +1109,7 @@ function resetAll() {
   resultCardLastFour.value = ''
   timeline.value = []
   polling.value = false
+  sessionFileName.value = ''
 }
 </script>
 
@@ -993,6 +1119,38 @@ function resetAll() {
 .border-primary { border-color: var(--primary) !important; }
 .bg-primary\/10 { background: color-mix(in srgb, var(--primary) 12%, transparent); }
 .border-brd { border-color: var(--brd); }
+.session-dropzone {
+  position: relative;
+  border-radius: 0.75rem;
+}
+.session-dropzone.is-dragging textarea {
+  border-color: var(--primary) !important;
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface, #fff));
+}
+.session-drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--primary);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface, #fff) 88%, var(--primary));
+  color: var(--ink, #111827);
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.session-file-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.session-file-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .account-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

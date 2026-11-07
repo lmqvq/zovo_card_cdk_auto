@@ -16,6 +16,7 @@
     "axios": "^1.6.8",
     "chart.js": "^4.4.1",
     "element-plus": "^2.14.2",
+    "fflate": "0.8.2",
     "pinia": "^2.1.7",
     "vue": "^3.4.30",
     "vue-chartjs": "^5.3.1",
