@@ -30,7 +30,6 @@
         <h2 class="text-xl font-bold text-ink">{{ isGrok ? t('grok.credential') : isXPremiumPlan(targetPlan) ? t('xPremium.credential') : 'ChatGPT 凭证' }}</h2>
         <div v-if="!isXPremiumPlan(targetPlan) && !isGrok" class="flex gap-2">
           <button type="button" class="btn-secondary !py-1" :class="{ 'ring-2': credMode === 'session' }" @click="credMode = 'session'">Session</button>
-          <button type="button" class="btn-secondary !py-1" :class="{ 'ring-2': credMode === 'mailbox' }" @click="credMode = 'mailbox'">邮箱</button>
         </div>
         <template v-if="credMode === 'session'">
           <p v-if="isGrok" class="text-sm text-muted">{{ t('grok.hint') }}</p>
