@@ -31,7 +31,11 @@ export default {
     brandSub: 'Account Upgrade Service',
     heroTitle: 'Recharge & Account Upgrade Service',
     heroSub: 'Verify your account and CDK, then confirm — step by step',
-    flowTitle: 'How It Works',
+    flowTitle: 'How to use',
+    flowSub: 'Choose a service to view the steps you need to complete',
+    flowReady: 'Prepare',
+    flowBadge: { submit: 'For one account', batch: 'For multiple CDKs', lookup: 'Check CDK status', billing: 'Check subscription billing' },
+    flowPrepare: { submit: 'CDK code, account Session', batch: 'CDK list, Excel/CSV sessions', lookup: 'The CDK code(s) to query', billing: 'Session or the redeemed CDK' },
     visualGuide: { label: 'Visual Redemption Guide', hint: 'View the visual tutorial' },
     services: {
       recharge: { title: 'Recharge', en: 'Recharge Portal', cta: 'Start Recharge', p1: 'Verify CDK code', p2: 'Submit session', p3: 'Confirm submission' },

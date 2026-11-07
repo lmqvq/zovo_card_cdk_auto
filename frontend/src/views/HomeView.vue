@@ -44,30 +44,88 @@
       </div>
 
       <!-- Flow Section -->
-      <div class="mt-16 pt-12 border-t bd">
-        <h3 class="text-2xl font-bold text-ink mb-10 text-center">{{ t('home.flowTitle') }}</h3>
-        <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-          <div v-for="flow in flows" :key="flow.title" class="space-y-4">
-            <h4 class="font-bold text-ink">{{ flow.title }}</h4>
-            <div class="space-y-3 text-sm text-muted">
-              <div v-for="(step, i) in flow.steps" :key="i" class="flex gap-3">
-                <span class="grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold" style="background: var(--primary-soft); color: var(--primary)">{{ i + 1 }}</span>
-                <span>{{ step }}</span>
+      <section id="operation-guide" class="operation-guide mt-16 border-t bd pt-12" aria-labelledby="operation-guide-title">
+        <div class="card !p-5 sm:!p-8">
+          <div class="text-center">
+            <h3 id="operation-guide-title" class="text-2xl font-bold text-ink">{{ t('home.flowTitle') }}</h3>
+            <p class="mt-2 text-sm text-muted">{{ t('home.flowSub') }}</p>
+          </div>
+
+          <div class="operation-flow-tabs mt-7 grid grid-cols-2 gap-1 rounded-2xl p-1 sm:grid-cols-4" role="tablist" :aria-label="t('home.flowTitle')">
+            <button
+              v-for="flow in flowItems"
+              :id="`flow-tab-${flow.key}`"
+              :key="flow.key"
+              type="button"
+              role="tab"
+              class="operation-flow-tab"
+              :class="{ 'is-active': activeFlow === flow.key }"
+              :aria-selected="activeFlow === flow.key"
+              :aria-controls="`flow-panel-${flow.key}`"
+              @click="activeFlow = flow.key"
+            >
+              {{ flow.title }}
+            </button>
+          </div>
+
+          <div
+            v-if="activeFlowItem"
+            :id="`flow-panel-${activeFlowItem.key}`"
+            class="operation-flow-panel mt-5 rounded-3xl border bd p-5 sm:p-8"
+            role="tabpanel"
+            :aria-labelledby="`flow-tab-${activeFlowItem.key}`"
+          >
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h4 class="text-xl font-bold text-ink">{{ activeFlowItem.title }}</h4>
+                <p class="mt-1 text-sm text-subtle">{{ activeFlowItem.en }}</p>
               </div>
+              <span class="operation-flow-badge">{{ activeFlowItem.badge }}</span>
+            </div>
+
+            <ol class="operation-flow-steps mt-8 grid gap-7 md:grid-cols-3 md:gap-5">
+              <li v-for="(step, index) in activeFlowItem.steps" :key="step.title" class="operation-flow-step">
+                <div class="operation-flow-step-head">
+                  <span class="operation-flow-step-dot">{{ index + 1 }}</span>
+                  <span v-if="index < activeFlowItem.steps.length - 1" class="operation-flow-step-line" aria-hidden="true" />
+                </div>
+                <h5 class="mt-4 font-bold text-ink">{{ step.title }}</h5>
+                <p class="mt-2 text-sm leading-6 text-muted">{{ step.detail }}</p>
+              </li>
+            </ol>
+
+            <div class="operation-flow-footer mt-8 flex flex-col gap-5 border-t bd pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <span class="text-sm font-semibold text-ink">{{ t('home.flowReady') }}</span>
+                <span class="operation-flow-prepare">{{ activeFlowItem.prepare }}</span>
+              </div>
+              <router-link :to="activeFlowItem.to" class="btn-primary shrink-0">
+                {{ activeFlowItem.cta }} <span aria-hidden="true">→</span>
+              </router-link>
             </div>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import UserPageHeader from '../components/UserPageHeader.vue'
 
 const { t } = useI18n({ useScope: 'global' })
+type FlowKey = 'submit' | 'batch' | 'lookup' | 'billing'
+
+const flowSpecs: Array<{ key: FlowKey; service: string; flow: FlowKey; to: string }> = [
+  { key: 'submit', service: 'recharge', flow: 'submit', to: '/recharge' },
+  { key: 'batch', service: 'batch', flow: 'batch', to: '/batch' },
+  { key: 'lookup', service: 'lookup', flow: 'lookup', to: '/history' },
+  { key: 'billing', service: 'billing', flow: 'billing', to: '/billing' },
+]
+
+const activeFlow = ref<FlowKey>('submit')
 
 const services = computed(() => [
   {
@@ -104,10 +162,110 @@ const services = computed(() => [
   },
 ])
 
-const flows = computed(() => [
-  { title: t('home.flows.submit.title'), steps: [t('home.flows.submit.s1'), t('home.flows.submit.s2'), t('home.flows.submit.s3')] },
-  { title: t('home.flows.batch.title'), steps: [t('home.flows.batch.s1'), t('home.flows.batch.s2'), t('home.flows.batch.s3')] },
-  { title: t('home.flows.lookup.title'), steps: [t('home.flows.lookup.s1'), t('home.flows.lookup.s2'), t('home.flows.lookup.s3')] },
-  { title: t('home.flows.billing.title'), steps: [t('home.flows.billing.s1'), t('home.flows.billing.s2'), t('home.flows.billing.s3')] },
-])
+const flowItems = computed(() => flowSpecs.map((spec) => ({
+  key: spec.key,
+  to: spec.to,
+  title: t(`home.services.${spec.service}.title`),
+  en: t(`home.services.${spec.service}.en`),
+  cta: t(`home.services.${spec.service}.cta`),
+  badge: t(`home.flowBadge.${spec.key}`),
+  prepare: t(`home.flowPrepare.${spec.key}`),
+  steps: [
+    { title: t(`home.services.${spec.service}.p1`), detail: t(`home.flows.${spec.flow}.s1`) },
+    { title: t(`home.services.${spec.service}.p2`), detail: t(`home.flows.${spec.flow}.s2`) },
+    { title: t(`home.services.${spec.service}.p3`), detail: t(`home.flows.${spec.flow}.s3`) },
+  ],
+})))
+
+const activeFlowItem = computed(() => flowItems.value.find((flow) => flow.key === activeFlow.value) ?? flowItems.value[0])
 </script>
+
+<style scoped>
+.operation-flow-tabs {
+  background: var(--surface-2);
+  border: 1px solid var(--brd);
+}
+
+.operation-flow-tab {
+  min-height: 42px;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.9rem;
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.operation-flow-tab:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.operation-flow-tab.is-active {
+  color: var(--primary-on);
+  background: var(--primary);
+  box-shadow: 0 7px 18px -10px var(--primary);
+}
+
+.operation-flow-panel {
+  background: var(--surface-solid, var(--surface));
+}
+
+.operation-flow-badge,
+.operation-flow-prepare {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid var(--brd);
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+.operation-flow-badge {
+  padding: 0.4rem 0.7rem;
+}
+
+.operation-flow-prepare {
+  padding: 0.5rem 0.75rem;
+}
+
+.operation-flow-step-head {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.operation-flow-step-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border: 2px solid var(--primary);
+  border-radius: 50%;
+  color: var(--primary-on);
+  background: var(--primary);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.operation-flow-step-line {
+  height: 2px;
+  flex: 1;
+  margin-left: 0.75rem;
+  border-radius: 999px;
+  background: var(--brd-2);
+}
+
+@media (max-width: 767px) {
+  .operation-flow-step:not(:last-child) {
+    padding-bottom: 0.25rem;
+    border-bottom: 1px dashed var(--brd);
+  }
+}
+</style>

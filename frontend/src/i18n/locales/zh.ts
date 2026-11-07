@@ -31,7 +31,11 @@ export default {
     brandSub: 'Account Upgrade Service',
     heroTitle: '充值与账户升级服务',
     heroSub: '按步骤校验账号、卡密并确认信息',
-    flowTitle: '操作流程',
+    flowTitle: '操作指南',
+    flowSub: '选择你要使用的功能，查看对应的操作步骤',
+    flowReady: '需要准备',
+    flowBadge: { submit: '适合单个账号', batch: '适合多张卡密', lookup: '查询卡密状态', billing: '查询订阅账单' },
+    flowPrepare: { submit: 'CDK 卡密、账号 Session', batch: 'CDK 卡密列表、Excel/CSV Session', lookup: '需要查询的 CDK 卡密', billing: 'Session 或兑换时绑定的卡密' },
     visualGuide: { label: '可视化兑换流程', hint: '查看图文教程' },
     services: {
       recharge: { title: '充值提交', en: 'Recharge Portal', cta: '开始充值', p1: '验证 CDK 卡密', p2: '提交 Session', p3: '确认提交申请' },

@@ -61,12 +61,25 @@ jobs:
           sha256sum "cdk-bundle-linux-amd64.tgz" | tee "cdk-bundle-linux-amd64.tgz.sha256"
           ls -lh cdk-bundle-linux-amd64.tgz*
 
+      - name: Prepare release notes
+        id: notes
+        shell: bash
+        run: |
+          NOTES_FILE=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [[ -f "$NOTES_FILE" ]]; then
+            echo "body_path=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+            echo "generate=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "generate=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: ${{ steps.ver.outputs.tag }}
-          generate_release_notes: true
+          generate_release_notes: ${{ steps.notes.outputs.generate }}
+          body_path: ${{ steps.notes.outputs.body_path }}
           files: |
             cdk-bundle-linux-amd64.tgz
             cdk-bundle-linux-amd64.tgz.sha256
