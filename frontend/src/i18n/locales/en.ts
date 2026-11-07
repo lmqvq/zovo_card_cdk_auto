@@ -32,6 +32,7 @@ export default {
     heroTitle: 'Recharge & Account Upgrade Service',
     heroSub: 'Verify your account and CDK, then confirm — step by step',
     flowTitle: 'How It Works',
+    visualGuide: { label: 'Visual Redemption Guide', hint: 'View the visual tutorial' },
     services: {
       recharge: { title: 'Recharge', en: 'Recharge Portal', cta: 'Start Recharge', p1: 'Verify CDK code', p2: 'Submit session', p3: 'Confirm submission' },
       batch: { title: 'Batch Redeem', en: 'Batch Redeem', cta: 'Start Batch', p1: 'Verify CDK list', p2: 'Import Excel sessions', p3: 'Match and submit in order' },

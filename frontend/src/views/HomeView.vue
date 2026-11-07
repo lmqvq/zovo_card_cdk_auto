@@ -23,6 +23,26 @@
         </router-link>
       </div>
 
+      <div class="mt-10 flex flex-col items-center gap-2">
+        <a
+          class="btn-secondary inline-flex items-center gap-2 rounded-full !px-5 !py-2 text-sm"
+          href="https://docs.qq.com/doc/p/930d2d6ba228c404b7fbfb15c971c079b6001d03?nlc=1"
+          target="_blank"
+          rel="noopener noreferrer"
+          :aria-label="t('home.visualGuide.label')"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="5" cy="12" r="2" />
+            <circle cx="19" cy="6" r="2" />
+            <circle cx="19" cy="18" r="2" />
+            <path d="m7 11 10-4M7 13l10 4" />
+          </svg>
+          <span>{{ t('home.visualGuide.label') }}</span>
+          <span aria-hidden="true">→</span>
+        </a>
+        <span class="text-xs text-subtle">{{ t('home.visualGuide.hint') }}</span>
+      </div>
+
       <!-- Flow Section -->
       <div class="mt-16 pt-12 border-t bd">
         <h3 class="text-2xl font-bold text-ink mb-10 text-center">{{ t('home.flowTitle') }}</h3>

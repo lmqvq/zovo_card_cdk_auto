@@ -32,6 +32,7 @@ export default {
     heroTitle: '充值与账户升级服务',
     heroSub: '按步骤校验账号、卡密并确认信息',
     flowTitle: '操作流程',
+    visualGuide: { label: '可视化兑换流程', hint: '查看图文教程' },
     services: {
       recharge: { title: '充值提交', en: 'Recharge Portal', cta: '开始充值', p1: '验证 CDK 卡密', p2: '提交 Session', p3: '确认提交申请' },
       batch: { title: '批量兑换', en: 'Batch Redeem', cta: '批量开始', p1: '批量验证 CDK', p2: '导入 Excel Session', p3: '按序配对自动提交' },
