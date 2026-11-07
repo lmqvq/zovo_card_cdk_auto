@@ -15,6 +15,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Point release tag to this custom commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f v1.4.34.4 "${GITHUB_SHA}"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" refs/tags/v1.4.34.4
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
