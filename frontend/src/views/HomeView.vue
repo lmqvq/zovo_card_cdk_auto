@@ -312,6 +312,8 @@ const activeFlowItem = computed(() => flowItems.value.find((flow) => flow.key ==
   --home-blue: #2925a9;
   --home-blue-soft: rgba(53, 48, 200, 0.1);
   --home-hero-glow: rgba(93, 84, 232, 0.14);
+  --home-control-bg: color-mix(in srgb, var(--tabs-bg, var(--surface-2)) 86%, var(--surface-solid, var(--surface)));
+  --home-control-border: color-mix(in srgb, var(--brd-2) 78%, var(--surface-solid, var(--surface)));
   overflow: hidden;
 }
 
@@ -447,6 +449,8 @@ const activeFlowItem = computed(() => flowItems.value.find((flow) => flow.key ==
   border-radius: 999px;
   color: var(--home-blue);
   background: var(--home-blue-soft);
+  border: 1px solid color-mix(in srgb, var(--home-blue) 18%, var(--brd));
+  box-shadow: 0 5px 14px -12px color-mix(in srgb, var(--home-blue) 75%, transparent);
   font-size: 13px;
   font-weight: 750;
 }
@@ -539,8 +543,11 @@ const activeFlowItem = computed(() => flowItems.value.find((flow) => flow.key ==
   display: grid;
   flex: none;
   place-items: center;
-  color: var(--home-blue);
-  background: var(--home-blue-soft);
+  color: var(--primary);
+  background: var(--home-control-bg);
+  border: 1px solid var(--home-control-border);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface-solid, var(--surface)) 90%, transparent), 0 7px 14px -12px var(--primary);
+  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .home-quick-icon { width: 52px; height: 52px; border-radius: 16px; }
@@ -572,17 +579,17 @@ const activeFlowItem = computed(() => flowItems.value.find((flow) => flow.key ==
   align-items: center;
   gap: 12px;
   padding: 0 24px;
-  border: 0;
-  border-radius: 12px;
-  color: #ffffff;
-  background: linear-gradient(135deg, #3834bf, #222084);
-  box-shadow: 0 15px 26px -16px rgba(44, 40, 168, 0.9);
+  border: 1px solid color-mix(in srgb, var(--primary) 85%, #000000);
+  border-radius: 999px;
+  color: var(--primary-on);
+  background: var(--primary);
+  box-shadow: 0 10px 20px -14px color-mix(in srgb, var(--primary) 88%, transparent);
   font-size: 15px;
   font-weight: 800;
   transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
 }
 
-.home-quick-button:hover { filter: brightness(1.08); box-shadow: 0 18px 30px -15px rgba(44, 40, 168, 0.95); transform: translateY(-1px); }
+.home-quick-button:hover { filter: brightness(1.08); box-shadow: 0 16px 28px -14px color-mix(in srgb, var(--primary) 90%, transparent); transform: translateY(-1px); }
 .home-quick-button:active { transform: translateY(0); }
 .home-quick-button:focus-visible { outline: 2px solid var(--home-blue); outline-offset: 3px; }
 
@@ -603,10 +610,11 @@ const activeFlowItem = computed(() => flowItems.value.find((flow) => flow.key ==
 }
 
 .home-trust-item:last-child { border-right: 0; }
-.home-trust-icon { width: 31px; height: 31px; color: var(--home-blue); }
+.home-trust-icon { display: grid; width: 38px; height: 38px; flex: none; place-items: center; padding: 7px; border: 1px solid var(--home-control-border); border-radius: 12px; color: var(--primary); background: var(--home-control-bg); box-shadow: 0 7px 14px -12px var(--primary); transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease; }
 .home-trust-icon svg { width: 100%; height: 100%; }
 .home-trust-item strong { display: block; color: var(--ink); font-size: 15px; font-weight: 800; }
 .home-trust-item small { display: block; margin-top: 2px; color: var(--ink-2); font-size: 12px; }
+.home-trust-item:hover .home-trust-icon { color: var(--primary-on); background: var(--primary); border-color: var(--primary); transform: translateY(-1px); }
 
 .home-services-grid {
   display: grid;
@@ -632,17 +640,18 @@ const activeFlowItem = computed(() => flowItems.value.find((flow) => flow.key ==
 .home-service-card:hover { border-color: color-mix(in srgb, var(--home-blue) 35%, var(--brd)); box-shadow: 0 18px 34px -28px rgba(38, 36, 145, 0.8); transform: translateY(-2px); }
 .home-service-icon { width: 42px; height: 42px; border-radius: 13px; }
 .home-service-icon svg { width: 23px; height: 23px; }
+.home-service-card:hover .home-service-icon { color: var(--primary-on); background: var(--primary); border-color: var(--primary); box-shadow: 0 10px 18px -13px var(--primary); transform: translateY(-1px); }
 .home-service-body { display: block; min-width: 0; flex: 1; }
 .home-service-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .home-service-heading strong { display: block; color: var(--ink); font-size: 16px; font-weight: 800; }
 .home-service-heading small { display: block; margin-top: 2px; color: var(--ink-2); font-size: 11px; }
-.home-service-arrow { color: var(--ink-3); font-size: 25px; line-height: 0.8; transition: color 0.2s ease, transform 0.2s ease; }
-.home-service-card:hover .home-service-arrow { color: var(--home-blue); transform: translateX(2px); }
+.home-service-arrow { display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid var(--home-control-border); border-radius: 50%; color: var(--ink-3); background: var(--home-control-bg); font-size: 18px; line-height: 1; transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease; }
+.home-service-card:hover .home-service-arrow { color: var(--primary-on); border-color: var(--primary); background: var(--primary); transform: translateX(2px); }
 .home-service-summary { display: block; margin-top: 17px; color: var(--ink-2); font-size: 12px; line-height: 1.5; }
 
 .home-guide-link-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 42px 0 28px; color: var(--ink-2); font-size: 12px; }
-.home-guide-link { display: inline-flex; align-items: center; gap: 10px; padding: 10px 20px; border: 1px solid var(--brd-2); border-radius: 999px; color: var(--ink); background: var(--surface-solid, var(--surface)); font-size: 14px; font-weight: 750; transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease; }
-.home-guide-link:hover { border-color: var(--home-blue); color: var(--home-blue); transform: translateY(-1px); }
+.home-guide-link { display: inline-flex; align-items: center; gap: 10px; padding: 10px 20px; border: 1px solid var(--home-control-border); border-radius: 999px; color: var(--ink); background: var(--home-control-bg); font-size: 14px; font-weight: 750; box-shadow: 0 7px 14px -14px var(--primary); transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease; }
+.home-guide-link:hover { border-color: var(--primary); color: var(--primary-on); background: var(--primary); box-shadow: 0 12px 20px -14px var(--primary); transform: translateY(-1px); }
 .home-guide-link svg { width: 17px; height: 17px; }
 
 .operation-guide { border-top: 1px solid var(--brd); padding-top: 42px; }
@@ -654,7 +663,7 @@ const activeFlowItem = computed(() => flowItems.value.find((flow) => flow.key ==
 .operation-flow-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-top: 28px; padding: 4px; border: 1px solid var(--brd); border-radius: 999px; background: var(--tabs-bg, var(--surface-2)); }
 .operation-flow-tab { min-height: 42px; padding: 0.65rem 0.75rem; border-radius: 999px; color: var(--ink-2); font-size: 0.875rem; font-weight: 650; transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease; }
 .operation-flow-tab:hover { color: var(--ink); background: color-mix(in srgb, var(--home-blue) 8%, transparent); }
-.operation-flow-tab.is-active { color: #ffffff; background: #0d0d0d; box-shadow: 0 7px 18px -10px rgba(0, 0, 0, 0.45); }
+.operation-flow-tab.is-active { color: var(--primary-on); background: var(--primary); box-shadow: 0 7px 18px -10px var(--primary); }
 .operation-flow-panel { margin-top: 18px; padding: 28px 30px 24px; border: 1px solid var(--brd); border-radius: 20px; background: var(--surface-solid, var(--surface)); }
 .operation-flow-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .operation-flow-panel-heading h3 { color: var(--ink); font-size: 21px; font-weight: 800; }
@@ -664,7 +673,7 @@ const activeFlowItem = computed(() => flowItems.value.find((flow) => flow.key ==
 .operation-flow-prepare { padding: 0.5rem 0.75rem; }
 .operation-flow-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-top: 28px; list-style: none; padding: 0; }
 .operation-flow-step-head { display: flex; min-height: 32px; align-items: center; }
-.operation-flow-step-dot { position: relative; z-index: 1; display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 50%; color: #ffffff; background: #0d0d0d; font-size: 0.8rem; font-weight: 750; }
+.operation-flow-step-dot { position: relative; z-index: 1; display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 50%; color: var(--primary-on); background: var(--primary); font-size: 0.8rem; font-weight: 750; box-shadow: 0 7px 14px -12px var(--primary); }
 .operation-flow-step-line { height: 2px; flex: 1; margin-left: 10px; border-radius: 999px; background: var(--brd-2); }
 .operation-flow-step h4 { margin-top: 14px; color: var(--ink); font-size: 14px; font-weight: 800; }
 .operation-flow-step p { margin-top: 6px; color: var(--ink-2); font-size: 12px; line-height: 1.65; }
