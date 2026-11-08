@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tuzi/cdk-recharge-system/internal/db"
+	"github.com/tuzi/cdk-recharge-system/internal/gptcard"
 )
 
 // CardPlatformWebhook POST /api/v1/webhooks/cardplatform
@@ -69,6 +70,8 @@ func CardPlatformWebhook(c *gin.Context) {
 		// 若是 GPT 直充完成，可写审计
 		if eventType == "gpt_direct.completed" {
 			db.WriteAudit("webhook", "gpt_direct.completed", idem, c.ClientIP())
+			// 兑换成功后解绑本次支付卡（异步、幂等；开关关闭时内部直接返回）
+			gptcard.EnqueueFromWebhook(payload)
 		}
 	}
 	// 本站 CDK 状态：兑换完成 → consumed（避免列表仍显示「未使用」）

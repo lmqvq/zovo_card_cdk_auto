@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tuzi/cdk-recharge-system/internal/config"
 	"github.com/tuzi/cdk-recharge-system/internal/db"
+	"github.com/tuzi/cdk-recharge-system/internal/gptcard"
 	"github.com/tuzi/cdk-recharge-system/internal/handler"
 	"github.com/tuzi/cdk-recharge-system/internal/plansync"
 )
@@ -51,6 +52,9 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 
 	// 启动卡台产品状态后台同步（每3分钟）
 	plansync.Start(ctx)
+
+	// 启动兑换后解绑卡的后台补偿任务（开关关闭时内部直接返回）
+	gptcard.Start(ctx)
 
 	return &Server{
 		engine: engine,
@@ -203,6 +207,13 @@ func setupRoutes(r *gin.Engine) {
 			admin.GET("/cardplatform/cdk-orders", handler.CardPlatformListCDKOrders)
 			admin.GET("/cardplatform/cdk-orders/:id", handler.CardPlatformGetCDKOrder)
 			admin.DELETE("/cardplatform/cards/:id", handler.CardPlatformDeleteCard)
+
+			// 兑换后解绑 ChatGPT 支付卡（解绑卡，与上面的"删卡（删平台虚拟卡）"不同）
+			admin.GET("/card-delete/jobs", handler.AdminListCardDeleteJobs)
+			admin.POST("/card-delete/jobs/:id/retry", handler.AdminRetryCardDeleteJob)
+			admin.POST("/card-delete/session-check", handler.AdminCheckCardDeleteSession)
+			admin.GET("/card-delete/settings", handler.AdminGetCardDeleteSettings)
+			admin.PUT("/card-delete/settings", handler.AdminPutCardDeleteSettings)
 
 			// Webhook 事件列表 + 配置提示
 			admin.GET("/webhooks/events", handler.AdminListWebhooks)

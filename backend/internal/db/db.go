@@ -258,6 +258,32 @@ func createTables() error {
 			suspended_at TEXT DEFAULT '',
 			synced_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+
+		// 兑换成功后从 ChatGPT 账号解绑本次支付卡的任务队列（幂等：order_id + 尾号唯一）
+		`CREATE TABLE IF NOT EXISTS card_delete_jobs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			cdk_id INTEGER NOT NULL DEFAULT 0,
+			order_id INTEGER NOT NULL DEFAULT 0,
+			plan TEXT DEFAULT '',
+			account_email TEXT DEFAULT '',
+			card_last_four TEXT DEFAULT '',
+			pm_id TEXT DEFAULT '',
+			pm_brand TEXT DEFAULT '',
+			cards_before INTEGER DEFAULT 0,
+			action TEXT DEFAULT 'pending',
+			reason TEXT DEFAULT '',
+			http_status INTEGER DEFAULT 0,
+			attempts INTEGER DEFAULT 0,
+			setdefault_used INTEGER DEFAULT 0,
+			session_state TEXT DEFAULT 'unknown',
+			session_checked_at DATETIME,
+			next_run_at DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(order_id, card_last_four)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_card_delete_action ON card_delete_jobs(action, next_run_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_card_delete_order ON card_delete_jobs(order_id)`,
 	}
 
 	for _, query := range queries {

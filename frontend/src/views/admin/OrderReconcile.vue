@@ -8,6 +8,7 @@
         </p>
       </div>
       <div class="flex flex-wrap gap-2">
+        <el-button @click="openCdSettings">解绑设置</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
       </div>
     </div>
@@ -58,6 +59,21 @@
         <el-table-column label="使用卡片" min-width="140">
           <template #default="{ row }">
             <span class="mono text-sm">{{ cardLabel(row) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="解绑卡" width="120">
+          <template #default="{ row }">
+            <el-tag v-if="row.card_delete" size="small" :type="cdTagType(row.card_delete)">
+              {{ cdLabel(row.card_delete) }}
+            </el-tag>
+            <span v-else class="text-xs text-subtle">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="Session" width="96">
+          <template #default="{ row }">
+            <span class="text-xs" :style="{ color: sessionColor(row.card_delete?.session_state) }">
+              {{ sessionLabel(row.card_delete?.session_state) }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column label="消耗金额" width="120">
@@ -124,6 +140,16 @@
           <el-descriptions-item label="用户邮箱">{{ detail.account_email || '—' }}</el-descriptions-item>
           <el-descriptions-item label="使用卡片">{{ cardLabel(detail) }}</el-descriptions-item>
           <el-descriptions-item label="卡 ID">{{ rowCardId(detail) || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="解绑卡">{{ cdLabel(detail.card_delete) }}</el-descriptions-item>
+          <el-descriptions-item label="解绑原因">{{ detail.card_delete?.reason || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="Session">
+            <span :style="{ color: sessionColor(detail.card_delete?.session_state) }">
+              {{ sessionLabel(detail.card_delete?.session_state) }}
+            </span>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="detail.card_delete?.pm_id" label="支付方式">
+            <span class="mono text-xs">{{ detail.card_delete.pm_id }}</span>
+          </el-descriptions-item>
           <el-descriptions-item label="卡充值额">{{ fundingCardLabel(detail) }}</el-descriptions-item>
           <el-descriptions-item label="实付">{{ amountLabel(detail) }}</el-descriptions-item>
           <el-descriptions-item label="服务费">{{ feeLabel(detail) }}（{{ detail.service_fee_status || '—' }}）</el-descriptions-item>
@@ -151,7 +177,43 @@
             调用卡台 <code>DELETE /cards/{id}</code>，永久销卡并将卡内余额退回平台余额。
           </p>
         </div>
+        <div v-if="detail.card_delete?.job_id" class="mt-4">
+          <el-button plain :loading="cdRetrying" @click="retryCardDelete(detail)">重试解绑</el-button>
+          <p class="text-xs text-muted mt-2">
+            重新执行「删除 ChatGPT 账号里本次支付卡」任务（幂等，不会重复扣款）。
+          </p>
+        </div>
       </template>
+    </el-drawer>
+
+    <el-drawer v-model="cdSettingsOpen" title="解绑卡设置" size="380px">
+      <el-form label-width="140px" size="small">
+        <el-form-item label="启用">
+          <el-switch v-model="cdSettings.card_delete_enabled" active-value="1" inactive-value="0" />
+        </el-form-item>
+        <el-form-item label="延迟秒数">
+          <el-input v-model="cdSettings.card_delete_delay_seconds" placeholder="60" />
+        </el-form-item>
+        <el-form-item label="续费复查次数">
+          <el-input v-model="cdSettings.card_delete_renew_check_attempts" placeholder="3" />
+        </el-form-item>
+        <el-form-item label="失败重试次数">
+          <el-input v-model="cdSettings.card_delete_max_attempts" placeholder="3" />
+        </el-form-item>
+        <el-form-item label="每分钟请求">
+          <el-input v-model="cdSettings.card_delete_rate_per_minute" placeholder="30" />
+        </el-form-item>
+        <el-form-item label="并发">
+          <el-input v-model="cdSettings.card_delete_concurrency" placeholder="2" />
+        </el-form-item>
+      </el-form>
+      <div class="flex gap-2">
+        <el-button type="primary" :loading="cdSaving" @click="saveCdSettings">保存</el-button>
+        <el-button @click="cdSettingsOpen = false">关闭</el-button>
+      </div>
+      <p class="text-xs text-muted mt-3">
+        仅对 <code>product=gpt</code> 且非续费档（plan 不含 renew）的订单生效；账号只剩一张卡时不删。
+      </p>
     </el-drawer>
   </div>
 </template>
@@ -172,6 +234,17 @@ const emailQ = ref('')
 const detailOpen = ref(false)
 const detail = ref<any>(null)
 const deletingId = ref('')
+const cdRetrying = ref(false)
+const cdSettingsOpen = ref(false)
+const cdSaving = ref(false)
+const cdSettings = ref<Record<string, string>>({
+  card_delete_enabled: '0',
+  card_delete_delay_seconds: '60',
+  card_delete_renew_check_attempts: '3',
+  card_delete_max_attempts: '3',
+  card_delete_rate_per_minute: '30',
+  card_delete_concurrency: '2',
+})
 
 const statusOptions = [
   'completed',
@@ -367,8 +440,109 @@ async function deleteCard(row: any) {
   }
 }
 
-onMounted(load)
-</script>
+/** 「解绑卡」状态文案（与后端 action/reason 对齐） */
+function cdLabel(cd: any): string {
+  if (!cd) return '—'
+  if (cd.action === 'done') {
+    return cd.reason === 'default_switched' ? '✅ 已解绑(换默认)' : '✅ 已解绑'
+  }
+  if (cd.action === 'skipped') {
+    const map: Record<string, string> = {
+      last_card: '最后一张·保留',
+      not_found: '卡不存在',
+      no_cards: '无卡',
+      no_last4: '无尾号',
+      no_session: '无 Session',
+      still_renewing: '等待取消续费',
+      subscription_unknown: '订阅状态未知',
+      default_card: '默认卡未处理',
+    }
+    return '⏭ ' + (map[cd.reason] || cd.reason || '未解绑')
+  }
+  if (cd.action === 'review') return '⚠️ 待人工'
+  if (cd.action === 'failed') return '❌ 失败'
+  if (cd.action === 'pending') return '⏳ 处理中'
+  return cd.action || '—'
+}
+
+function cdTagType(cd: any): string {
+  const a = cd?.action
+  if (a === 'done') return 'success'
+  if (a === 'failed') return 'danger'
+  if (a === 'review') return 'warning'
+  if (a === 'pending') return 'info'
+  return ''
+}
+
+function sessionLabel(s?: string) {
+  if (s === 'valid') return '🟢 有效'
+  if (s === 'invalid') return '🔴 失效'
+  return '⚪ 未知'
+}
+
+function sessionColor(s?: string) {
+  if (s === 'valid') return 'var(--ok, #16a34a)'
+  if (s === 'invalid') return 'var(--err, #dc2626)'
+  return 'var(--text-subtle, #94a3b8)'
+}
+
+async function retryCardDelete(row: any) {
+  const jobId = row?.card_delete?.job_id
+  if (!jobId) return
+  cdRetrying.value = true
+  try {
+    const r = await authFetch(`/api/v1/admin/card-delete/jobs/${jobId}/retry`, { method: 'POST' })
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok) {
+      dialog.toast(d.error || '重试失败', 'err')
+      return
+    }
+    dialog.toast('已提交重试，稍后刷新查看结果', 'ok')
+    setTimeout(load, 3000)
+  } catch (e: any) {
+    dialog.toast(e?.message || '网络错误', 'err')
+  } finally {
+    cdRetrying.value = false
+  }
+}
+
+async function openCdSettings() {
+  cdSettingsOpen.value = true
+  try {
+    const r = await authFetch('/api/v1/admin/card-delete/settings')
+    if (!r.ok) return
+    const d = await r.json()
+    for (const k of Object.keys(cdSettings.value)) {
+      if (typeof d[k] === 'string') cdSettings.value[k] = d[k]
+    }
+  } catch {
+    /* 保持默认值 */
+  }
+}
+
+async function saveCdSettings() {
+  cdSaving.value = true
+  try {
+    const r = await authFetch('/api/v1/admin/card-delete/settings', {
+      method: 'PUT',
+      body: JSON.stringify(cdSettings.value),
+    })
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok) {
+      dialog.toast(d.error || '保存失败', 'err')
+      return
+    }
+    dialog.toast('已保存', 'ok')
+    cdSettingsOpen.value = false
+    await load()
+  } catch (e: any) {
+    dialog.toast(e?.message || '网络错误', 'err')
+  } finally {
+    cdSaving.value = false
+  }
+}
+
+onMounted(load)</script>
 
 <style scoped>
 .mono {

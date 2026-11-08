@@ -882,7 +882,60 @@ func enrichCDKOrderList(c *gin.Context, cli *cardplatform.Client, raw json.RawMe
 		m["cdk_lifecycle"] = cdkLifecycleLabel(strAny(m["cdk_status"]), strAny(m["status"]), strAny(m["service_fee_status"]))
 		outList = append(outList, m)
 	}
+	attachCardDeleteStatus(outList)
 	return gin.H{"list": outList, "total": total}
+}
+
+// attachCardDeleteStatus 给订单列表挂上"解绑卡"状态（一次 IN 查询，不额外请求）。
+func attachCardDeleteStatus(list []any) {
+	ids := make([]int64, 0, len(list))
+	for _, it := range list {
+		if m, ok := it.(map[string]any); ok {
+			if id := orderIDOf(m); id > 0 {
+				ids = append(ids, id)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	jobs, err := db.ListCardDeleteJobsByOrderIDs(ids)
+	if err != nil {
+		return
+	}
+	for _, it := range list {
+		m, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		j, ok := jobs[orderIDOf(m)]
+		if !ok {
+			continue
+		}
+		m["card_delete"] = cardDeleteView(j)
+	}
+}
+
+func cardDeleteView(j db.CardDeleteJob) gin.H {
+	return gin.H{
+		"job_id":        j.ID,
+		"action":        j.Action,
+		"reason":        j.Reason,
+		"session_state": j.SessionState,
+		"pm_id":         j.PMID,
+		"pm_brand":      j.PMBrand,
+		"cards_before":  j.CardsBefore,
+		"http_status":   j.HTTPStatus,
+		"attempts":      j.Attempts,
+		"updated_at":    j.UpdatedAt,
+	}
+}
+
+func orderIDOf(m map[string]any) int64 {
+	if id := int64Any(m["order_id"]); id > 0 {
+		return id
+	}
+	return int64Any(m["id"])
 }
 
 func enrichOneCDKOrder(c *gin.Context, cli *cardplatform.Client, m map[string]any) {
@@ -912,6 +965,13 @@ func enrichOneCDKOrder(c *gin.Context, cli *cardplatform.Client, m map[string]an
 		}
 	}
 	m["cdk_lifecycle"] = cdkLifecycleLabel(strAny(m["cdk_status"]), strAny(m["status"]), strAny(m["service_fee_status"]))
+	if id := orderIDOf(m); id > 0 {
+		if jobs, err := db.ListCardDeleteJobsByOrderIDs([]int64{id}); err == nil {
+			if j, ok := jobs[id]; ok {
+				m["card_delete"] = cardDeleteView(j)
+			}
+		}
+	}
 }
 
 func cdkLifecycleLabel(cdkStatus, orderStatus, feeStatus string) string {
