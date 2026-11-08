@@ -107,17 +107,24 @@ const router = createRouter({
 
 let setupChecked = false
 let setupInstalled = true
+const SETUP_STATUS_TIMEOUT_MS = 5000
 
 async function ensureSetupStatus(): Promise<boolean> {
   if (setupChecked) return setupInstalled
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), SETUP_STATUS_TIMEOUT_MS)
   try {
-    const r = await fetch('/api/v1/setup/status')
+    const r = await fetch('/api/v1/setup/status', { signal: controller.signal })
+    if (!r.ok) throw new Error(`setup status HTTP ${r.status}`)
     const d = await r.json()
+    if (typeof d?.installed !== 'boolean') throw new Error('invalid setup status response')
     setupInstalled = !!d.installed
   } catch {
     setupInstalled = true // 后端不可达时不阻断登录页
+  } finally {
+    window.clearTimeout(timeoutId)
+    setupChecked = true
   }
-  setupChecked = true
   return setupInstalled
 }
 
@@ -143,6 +150,36 @@ router.beforeEach(async (to) => {
   if ((to.path === `${OPS_BASE}/login` || to.path === '/auth/login') && authStore.isLoggedIn) {
     return OPS_BASE
   }
+})
+
+router.afterEach((to) => {
+  try {
+    sessionStorage.removeItem(`route-reload:${to.path}`)
+  } catch {
+    // 隐私模式禁用 sessionStorage 时忽略清理。
+  }
+})
+
+// 发布后旧页面可能继续引用已经不存在的动态分包。让用户重新从服务器加载当前入口，
+// 否则导航请求会失败，页面看起来像“点击没有跳转”。同一路由只自动重试一次，
+// 避免资源持续损坏时形成刷新循环。
+router.onError((error, to) => {
+  const message = String(error)
+  const isChunkLoadError = /dynamically imported module|Loading chunk|ChunkLoadError|Importing a module script failed/i.test(message)
+  if (!isChunkLoadError || typeof window === 'undefined') return
+
+  const retryKey = `route-reload:${to.path}`
+  try {
+    if (sessionStorage.getItem(retryKey)) {
+      sessionStorage.removeItem(retryKey)
+      return
+    }
+    sessionStorage.setItem(retryKey, '1')
+  } catch {
+    // 隐私模式禁用 sessionStorage 时仍执行一次刷新兜底。
+  }
+  const separator = to.fullPath.includes('?') ? '&' : '?'
+  window.location.assign(`${to.fullPath}${separator}_route_reload=${Date.now()}`)
 })
 
 export default router
