@@ -1,20 +1,8 @@
 <template>
   <div class="u-page">
-    <UserPageHeader v-if="step !== 1 && step !== 2 && step !== 4" :eyebrow="t('hero.redeemEyebrow')" :title="t('hero.redeemTitle')" :subtitle="t('hero.redeemSub')" badges />
-    <UserPageHeader v-else hide-hero :title="t('hero.redeemTitle')" />
-    <div class="u-main" :class="(step === 1 || step === 2 || step === 4) ? 'result-wrap' : 'max-w-3xl'">
-      <template v-if="step === 3">
-        <RedeemModeTabs />
-        <!-- redeem-flow v2: no public fee reference -->
-        <!-- steps -->
-        <ol class="stepper" :aria-label="t('hero.redeemTitle')">
-          <li v-for="(s, i) in steps" :key="s" :class="{ 'is-done': step > i + 1, 'is-current': step === i + 1 }" :aria-current="step === i + 1 ? 'step' : undefined">
-            <span class="stepper-dot">{{ i + 1 }}</span>
-            <span class="stepper-label">{{ s }}</span>
-          </li>
-        </ol>
-      </template>
-      <template v-else-if="step === 1">
+    <UserPageHeader hide-hero :title="t('hero.redeemTitle')" />
+    <div class="u-main result-wrap">
+      <template v-if="step === 1">
         <div class="result-subnav">
           <div class="result-crumb">{{ t('hero.redeemEyebrow') }} <i>/</i> <b>输入卡密</b> <i>/</i> STEP 01</div>
           <RedeemModeTabs compact />
@@ -76,6 +64,37 @@
           <div class="cred-hero-note">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
             <div><b>仅用于本次预检</b><span>不保存登录态，不会自动兑换</span></div>
+          </div>
+        </section>
+      </template>
+      <template v-else-if="step === 3">
+        <div class="result-subnav">
+          <div class="result-crumb">{{ t('hero.redeemEyebrow') }} <i>/</i> <b>确认兑换</b> <i>/</i> STEP 03</div>
+          <RedeemModeTabs compact />
+        </div>
+        <section class="result-hero cdk-hero">
+          <div class="result-hero-copy">
+            <div class="result-eyebrow">REDEEM <em>· 确认兑换</em></div>
+            <h1>{{ t('hero.redeemTitle') }}</h1>
+            <p>请核对账号与目标套餐，确认后提交兑换。</p>
+            <ul class="cdk-badges">
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></svg>
+                {{ t('hero.badgeOfficial') }}
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                {{ t('hero.badgeSelf') }}
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                {{ t('hero.badgeTrack') }}
+              </li>
+            </ul>
+          </div>
+          <div class="cred-hero-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v.5" /><path d="M12 11v5" /></svg>
+            <div><b>提交前请核对</b><span>兑换将绑定到当前账号</span></div>
           </div>
         </section>
       </template>
@@ -330,88 +349,138 @@
       </div>
 
       <!-- 3 redeem -->
-      <div v-show="step === 3" class="card space-y-4">
-        <h2 class="text-xl font-bold text-ink">确认兑换</h2>
-        <p class="text-sm text-muted">将提交兑换请求；结果不确定或 review 时请勿重复提交，请轮询结果。</p>
+      <div v-show="step === 3" class="cdk-grid">
+        <div class="cdk-col">
+          <section class="card cred-card confirm-card">
+            <div class="cred-head">
+              <div>
+                <span class="cdk-micro">STEP 03 · 兑换确认</span>
+                <h2>确认兑换</h2>
+              </div>
+              <span class="cred-badge" :class="{ 'is-muted': !account.checked }">
+                <i></i>{{ account.checked ? '账号已验证' : '账号待确认' }}
+              </span>
+            </div>
 
-        <!-- 与卡台直充预检一致：邮箱 + 订阅事实 -->
-        <div v-if="account.checked" class="rounded-xl border p-4 space-y-3" style="border-color: var(--brd); background: var(--surface-2, var(--soft))">
-          <div class="flex flex-wrap items-center gap-2">
-            <strong class="text-ink text-base">{{ account.email || '账号已验证' }}</strong>
-            <el-tag size="small" :type="subscriptionStatusTag">{{ subscriptionStatusText }}</el-tag>
-          </div>
-          <dl class="account-facts">
-            <div>
-              <dt>目标套餐</dt>
-              <dd>{{ planLabel(targetPlan) }}</dd>
+            <p class="confirm-desc">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v.5" /><path d="M12 11v5" /></svg>
+              将提交兑换请求；结果不确定或 review 时请勿重复提交，请轮询结果。
+            </p>
+
+            <div v-if="account.checked" class="account-summary">
+              <div class="account-head">
+                <span class="account-avatar">@</span>
+                <div class="account-id">
+                  <span>兑换账号</span>
+                  <b>{{ account.email || '账号已验证' }}</b>
+                </div>
+                <span class="status-pill" :class="{ 'is-muted': subscriptionStatusTag !== 'success' }">
+                  <i></i>{{ subscriptionStatusText }}
+                </span>
+              </div>
+
+              <dl class="confirm-facts">
+                <div><dt>目标套餐</dt><dd>{{ targetPlan ? planLabel(targetPlan) : '—' }}</dd></div>
+                <div>
+                  <dt>当前套餐</dt>
+                  <dd>{{ account.currentPlan ? planLabel(isGrok && account.currentPlan ? 'grok_' + String(account.currentPlan).replace(/^grok_/i, '') : account.currentPlan) : '—' }}</dd>
+                </div>
+                <div v-if="isGrok && account.xSubscriptionType"><dt>X 订阅等级</dt><dd>{{ account.xSubscriptionType }}</dd></div>
+                <div><dt>订阅状态</dt><dd>{{ subscriptionStatusText }}</dd></div>
+                <div>
+                  <dt>套餐到期</dt>
+                  <dd :class="{ 'is-mono': !!account.subscriptionActiveUntil }">{{ account.subscriptionActiveUntil ? fmtTime(account.subscriptionActiveUntil) : '上游未提供' }}</dd>
+                </div>
+                <div><dt>剩余</dt><dd>{{ account.subscriptionActiveUntil ? subscriptionRemaining : '上游未提供' }}</dd></div>
+                <div><dt>自动续费</dt><dd>{{ renewalStatusText }}</dd></div>
+                <div>
+                  <dt>最近付款时间</dt>
+                  <dd :class="{ 'is-mono': !!account.lastPayment }">{{ lastPaymentAtText }}</dd>
+                </div>
+                <div><dt>最近付款</dt><dd>{{ lastPaymentText }}</dd></div>
+                <div><dt>支付方式</dt><dd>{{ paymentMethodText }}</dd></div>
+              </dl>
             </div>
-            <div>
-              <dt>当前套餐</dt>
-              <dd>{{ planLabel(isGrok && account.currentPlan ? 'grok_' + String(account.currentPlan).replace(/^grok_/i, '') : account.currentPlan) }}</dd>
+            <div v-else class="account-empty">
+              预检未返回账号摘要，仍可尝试兑换（以卡台校验为准）。
             </div>
-            <div v-if="isGrok && account.xSubscriptionType">
-              <dt>X 订阅等级</dt>
-              <dd>{{ account.xSubscriptionType }}</dd>
+
+            <div v-if="grokBlockingReason" class="confirm-warning">
+              <span class="confirm-warning-icon">!</span>
+              <div><b>暂不能兑换</b><p>{{ grokBlockingReason }}</p></div>
             </div>
-            <div>
-              <dt>订阅状态</dt>
-              <dd>{{ subscriptionStatusText }}</dd>
+
+            <div v-if="alreadySatisfied && !grokBlockingReason && !needsSubscriptionRecovery && !recoveryPending" class="confirm-warning">
+              <span class="confirm-warning-icon">!</span>
+              <div><b>当前套餐已满足</b><p>{{ alreadySatisfiedHint }}</p></div>
             </div>
-            <div>
-              <dt>套餐到期</dt>
-              <dd>{{ account.subscriptionActiveUntil ? fmtTime(account.subscriptionActiveUntil) : '上游未提供' }}</dd>
+
+            <div v-if="needsSubscriptionRecovery || recoveryPending" class="confirm-warning">
+              <span class="confirm-warning-icon">!</span>
+              <div>
+                <p>{{ t(recoveryPending ? 'grace.pending' : 'grace.hint') }}</p>
+                <button v-if="needsSubscriptionRecovery && !recoveryPending" class="btn-secondary confirm-recovery-btn" :disabled="busy || recoveringSubscription || !preflightToken" @click="recoverGraceSubscription">
+                  {{ t(recoveringSubscription ? 'grace.processing' : 'grace.action') }}
+                </button>
+                <button v-else class="btn-secondary confirm-recovery-btn" :disabled="busy || recoveringSubscription" @click="doPreflight">{{ t('grace.recheck') }}</button>
+              </div>
             </div>
-            <div>
-              <dt>剩余</dt>
-              <dd>{{ account.subscriptionActiveUntil ? subscriptionRemaining : '上游未提供' }}</dd>
+
+            <div v-if="error" class="alert alert-error confirm-alert">{{ error }}</div>
+
+            <div class="cred-actions confirm-actions">
+              <button class="cred-back" type="button" @click="step = 2">上一步</button>
+              <button
+                class="cred-submit"
+                type="button"
+                :disabled="busy || recoveringSubscription || recoveryPending || needsSubscriptionRecovery || alreadySatisfied || !canRedeem"
+                @click="doRedeem"
+              >
+                {{ busy ? '提交中…' : alreadySatisfied ? '当前套餐已满足' : '兑换' }}
+              </button>
             </div>
-            <div>
-              <dt>自动续费</dt>
-              <dd :class="account.subscriptionWillRenew === true ? 'text-warn' : account.subscriptionWillRenew === false ? 'text-good' : ''">
-                {{ renewalStatusText }}
-              </dd>
-            </div>
-            <div>
-              <dt>最近付款时间</dt>
-              <dd>{{ lastPaymentAtText }}</dd>
-            </div>
-            <div>
-              <dt>最近付款</dt>
-              <dd>{{ lastPaymentText }}</dd>
-            </div>
-            <div>
-              <dt>支付方式</dt>
-              <dd>{{ paymentMethodText }}</dd>
-            </div>
-          </dl>
-        </div>
-        <div v-else class="rounded-xl bg-soft p-3 text-sm text-muted">
-          预检未返回账号摘要，仍可尝试兑换（以卡台校验为准）。
+          </section>
         </div>
 
-        <div v-if="grokBlockingReason" class="alert" style="background: var(--warn-soft, #fef3c7); color: var(--warn, #b45309); border-color: var(--warn, #d97706)">
-          {{ grokBlockingReason }}
-        </div>
+        <aside class="cdk-col cdk-aside">
+          <section class="cdk-flow-card">
+            <div class="cdk-flow-top"><span>REDEEM FLOW</span><span>4 STEPS</span></div>
+            <h3>兑换流程</h3>
+            <p class="cdk-flow-sub">从卡密到开通，四步完成。</p>
+            <ol class="cdk-flow-steps">
+              <li class="is-done">
+                <span class="cdk-flow-num">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7" /></svg>
+                </span>
+                <div><b>{{ steps[0] }}</b><p>卡密与套餐已校验</p></div>
+              </li>
+              <li class="is-done">
+                <span class="cdk-flow-num">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7" /></svg>
+                </span>
+                <div><b>{{ steps[1] }}</b><p>登录态与账号已校验</p></div>
+              </li>
+              <li class="is-active">
+                <span class="cdk-flow-num">03</span>
+                <div><b>{{ steps[2] }}</b><p>核对账号与目标套餐</p></div>
+                <em>当前</em>
+              </li>
+              <li>
+                <span class="cdk-flow-num">04</span>
+                <div><b>{{ steps[3] }}</b><p>自动处理，凭证可查</p></div>
+              </li>
+            </ol>
+          </section>
 
-        <div v-if="alreadySatisfied && !grokBlockingReason && !needsSubscriptionRecovery && !recoveryPending" class="alert" style="background: var(--warn-soft, #fef3c7); color: var(--warn, #b45309); border-color: var(--warn, #d97706)">
-          {{ alreadySatisfiedHint }}
-        </div>
-
-        <div v-if="needsSubscriptionRecovery || recoveryPending" class="alert" style="background: var(--warn-soft, #fef3c7); color: var(--warn, #b45309); border-color: var(--warn, #d97706)">
-          <p>{{ t(recoveryPending ? 'grace.pending' : 'grace.hint') }}</p>
-          <button v-if="needsSubscriptionRecovery && !recoveryPending" class="btn-secondary mt-3" :disabled="busy || recoveringSubscription || !preflightToken" @click="recoverGraceSubscription">
-            {{ t(recoveringSubscription ? 'grace.processing' : 'grace.action') }}
-          </button>
-          <button v-else class="btn-secondary mt-3" :disabled="busy || recoveringSubscription" @click="doPreflight">{{ t('grace.recheck') }}</button>
-        </div>
-
-        <div v-if="error" class="alert alert-error">{{ error }}</div>
-        <div class="flex gap-3">
-          <button class="btn-secondary flex-1" @click="step = 2">上一步</button>
-          <button class="btn-primary flex-1" :disabled="busy || recoveringSubscription || recoveryPending || needsSubscriptionRecovery || alreadySatisfied || !canRedeem" @click="doRedeem">
-            {{ busy ? '提交中…' : alreadySatisfied ? '当前套餐已满足' : '兑换' }}
-          </button>
-        </div>
+          <section class="cdk-security cred-security">
+            <h3>提交说明</h3>
+            <ol class="cred-security-list">
+              <li><span>01</span><div><b>提交后自动处理</b><p>可在本页查看兑换进度。</p></div></li>
+              <li><span>02</span><div><b>请勿重复提交</b><p>review / pending 时等待结果自动刷新。</p></div></li>
+              <li><span>03</span><div><b>结果保存至本设备</b><p>可凭卡密重新查询。</p></div></li>
+            </ol>
+          </section>
+        </aside>
       </div>
 
       <!-- 4 result -->
@@ -3217,5 +3286,185 @@ function resetAll() {
   .cred-back,
   .cred-submit { height: 44px; font-size: 12.5px; }
   .cred-security { border-radius: 16px; }
+}
+
+/* ── 兑换第 3 步：确认兑换 ─────────────────────────────────────────── */
+.confirm-desc {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 16px 0 0;
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.confirm-desc svg { width: 13px; height: 13px; flex: none; margin-top: 1px; }
+
+.cred-badge.is-muted {
+  border-color: var(--brd);
+  background: var(--surface-2);
+  color: var(--ink-3);
+}
+.cred-badge.is-muted i { background: var(--ink-3); }
+
+.account-summary {
+  margin-top: 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--brd);
+  border-radius: 16px;
+  background: var(--surface-2);
+}
+.account-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--brd);
+}
+.account-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--brd-2);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 15px;
+}
+.account-id { flex: 1; min-width: 0; }
+.account-id span {
+  display: block;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.account-id b {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid var(--good-line, #cde8d9);
+  border-radius: 999px;
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: 10px;
+  font-weight: 600;
+}
+.status-pill i { width: 5px; height: 5px; border-radius: 50%; background: var(--good); }
+.status-pill.is-muted {
+  border-color: var(--brd);
+  background: var(--surface);
+  color: var(--ink-3);
+}
+.status-pill.is-muted i { background: var(--ink-3); }
+
+.confirm-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 26px;
+  margin: 16px 0 0;
+}
+.confirm-facts dt {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.confirm-facts dd {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.confirm-facts dd.is-mono {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.account-empty {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--brd);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.confirm-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: 14px;
+  background: var(--warn-soft);
+}
+.confirm-warning-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--warn);
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 800;
+}
+.confirm-warning b { display: block; color: var(--warn); font-size: 12.5px; font-weight: 700; }
+.confirm-warning p { margin: 4px 0 0; color: var(--ink-2); font-size: 11.5px; line-height: 1.65; }
+.confirm-recovery-btn {
+  height: 34px;
+  margin-top: 8px;
+  padding: 0 12px;
+  border-radius: var(--btn-radius, 999px);
+  font-size: 11.5px;
+}
+.confirm-alert { margin-top: 14px; }
+
+.confirm-actions { margin-top: 18px; }
+.cred-submit:disabled {
+  border: 1px solid var(--brd);
+  background: var(--soft);
+  color: var(--ink-3);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .account-summary { padding: 14px; border-radius: 14px; }
+  .account-avatar { width: 34px; height: 34px; font-size: 13px; }
+  .account-id b { font-size: 11.5px; }
+  .confirm-facts { gap: 12px 16px; }
+  .confirm-facts dt { font-size: 8.5px; }
+  .confirm-facts dd { font-size: 12px; }
+  .confirm-facts dd.is-mono { font-size: 10px; }
+  .confirm-warning { padding: 12px 13px; }
+  .confirm-warning b { font-size: 12px; }
+  .confirm-warning p { font-size: 11px; }
 }
 </style>
