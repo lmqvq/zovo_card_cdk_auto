@@ -1,9 +1,9 @@
 <template>
   <div class="u-page">
-    <UserPageHeader v-if="step !== 4" :eyebrow="t('hero.redeemEyebrow')" :title="t('hero.redeemTitle')" :subtitle="t('hero.redeemSub')" badges />
+    <UserPageHeader v-if="step !== 1 && step !== 4" :eyebrow="t('hero.redeemEyebrow')" :title="t('hero.redeemTitle')" :subtitle="t('hero.redeemSub')" badges />
     <UserPageHeader v-else hide-hero :title="t('hero.redeemTitle')" />
-    <div class="u-main" :class="step === 4 ? 'result-wrap' : 'max-w-3xl'">
-      <template v-if="step !== 4">
+    <div class="u-main" :class="(step === 1 || step === 4) ? 'result-wrap' : 'max-w-3xl'">
+      <template v-if="step === 2 || step === 3">
         <RedeemModeTabs />
         <!-- redeem-flow v2: no public fee reference -->
         <!-- steps -->
@@ -13,6 +13,40 @@
             <span class="stepper-label">{{ s }}</span>
           </li>
         </ol>
+      </template>
+      <template v-else-if="step === 1">
+        <div class="result-subnav">
+          <div class="result-crumb">{{ t('hero.redeemEyebrow') }} <i>/</i> <b>输入卡密</b> <i>/</i> STEP 01</div>
+          <RedeemModeTabs compact />
+        </div>
+        <section class="result-hero cdk-hero">
+          <div class="result-hero-copy">
+            <div class="result-eyebrow">REDEEM <em>· 输入卡密</em></div>
+            <h1>{{ t('hero.redeemTitle') }}</h1>
+            <p>{{ t('hero.redeemSub') }}</p>
+            <ul class="cdk-badges">
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></svg>
+                {{ t('hero.badgeOfficial') }}
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                {{ t('hero.badgeSelf') }}
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                {{ t('hero.badgeTrack') }}
+              </li>
+            </ul>
+          </div>
+          <div class="cdk-hero-aside">
+            <span>已经兑换过？</span>
+            <router-link to="/history">
+              查询卡密状态
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7" /><path d="M8 7h9v9" /></svg>
+            </router-link>
+          </div>
+        </section>
       </template>
       <template v-else>
         <div class="result-subnav">
@@ -36,15 +70,93 @@
       </template>
 
       <!-- 1 preview -->
-      <div v-show="step === 1" class="card space-y-4">
-        <h2 class="text-xl font-bold text-ink">输入 CDK</h2>
-        <input v-model="code" class="input mono" placeholder="SXC-XXXX-XXXX-XXXX-XXXX" @keyup.enter="doPreview" />
-        <div v-if="error" class="alert alert-error">{{ error }}</div>
-        <div v-if="previewInfo" class="rounded-xl bg-soft p-4 text-sm space-y-1">
-          <div>套餐：<b>{{ targetPlan ? planLabel(targetPlan) : '—' }}</b></div>
-          <div class="text-muted">{{ previewInfo.message || '码有效，可继续' }}</div>
+      <div v-show="step === 1" class="cdk-grid">
+        <div class="cdk-col">
+          <section class="card cdk-form-card">
+            <div class="cdk-form-head">
+              <div>
+                <span class="cdk-micro">STEP 01 · 卡密校验</span>
+                <h2>输入 CDK</h2>
+              </div>
+              <span class="cdk-form-badge"><i></i>仅校验卡密</span>
+            </div>
+
+            <div class="cdk-field">
+              <div class="cdk-field-label"><span>CDK 卡密</span><span>必填</span></div>
+              <div class="cdk-input-shell">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9a3 3 0 0 0 0 6v3h18v-3a3 3 0 0 1 0-6V6H3z" /><path d="M13 6v2" /><path d="M13 11v2" /><path d="M13 16v2" /></svg>
+                <input
+                  v-model="code"
+                  class="cdk-input"
+                  type="text"
+                  autocomplete="off"
+                  autocapitalize="characters"
+                  spellcheck="false"
+                  placeholder="ZC-XXXX-XXXX-XXXX-XXXX"
+                  aria-label="CDK 卡密"
+                  @keyup.enter="doPreview"
+                />
+              </div>
+              <div class="cdk-hint">请粘贴完整卡密，包含所有分段。</div>
+            </div>
+
+            <div v-if="error" class="alert alert-error cdk-error">{{ error }}</div>
+            <div v-if="previewInfo" class="cdk-preview">
+              <div class="cdk-preview-row"><span>套餐</span><b>{{ targetPlan ? planLabel(targetPlan) : '—' }}</b></div>
+              <p>{{ previewInfo.message || '码有效，可继续' }}</p>
+            </div>
+
+            <button class="btn-primary cdk-cta" type="button" :disabled="busy" @click="doPreview">
+              {{ busy ? '校验中…' : '预览 / 下一步' }}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
+            </button>
+            <p class="cdk-note">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+              点击预览仅校验卡密有效性，不会扣款或提交账号。
+            </p>
+          </section>
+
+          <section class="card cdk-tips-card">
+            <h3>兑换前确认</h3>
+            <ol class="cdk-tips-list">
+              <li><span class="cdk-tips-num">01</span><div><b>卡密未使用</b><p>同一张卡密仅能兑换一次。</p></div></li>
+              <li><span class="cdk-tips-num">02</span><div><b>账号可登录</b><p>后续按页面提示填写登录态或邮箱密码。</p></div></li>
+              <li><span class="cdk-tips-num">03</span><div><b>套餐未满足</b><p>账号已有更高套餐时，可能无法重复购买。</p></div></li>
+            </ol>
+          </section>
         </div>
-        <button class="btn-primary w-full" :disabled="busy" @click="doPreview">{{ busy ? '校验中…' : '预览 / 下一步' }}</button>
+
+        <aside class="cdk-col cdk-aside">
+          <section class="cdk-flow-card">
+            <div class="cdk-flow-top"><span>REDEEM FLOW</span><span>4 STEPS</span></div>
+            <h3>兑换流程</h3>
+            <p class="cdk-flow-sub">从卡密到开通，四步完成。</p>
+            <ol class="cdk-flow-steps">
+              <li class="is-active">
+                <span class="cdk-flow-num">01</span>
+                <div><b>{{ steps[0] }}</b><p>输入卡密并校验套餐信息</p></div>
+                <em>当前</em>
+              </li>
+              <li>
+                <span class="cdk-flow-num">02</span>
+                <div><b>{{ steps[1] }}</b><p>按页面提示填写登录态</p></div>
+              </li>
+              <li>
+                <span class="cdk-flow-num">03</span>
+                <div><b>{{ steps[2] }}</b><p>核对账号与目标套餐</p></div>
+              </li>
+              <li>
+                <span class="cdk-flow-num">04</span>
+                <div><b>{{ steps[3] }}</b><p>自动处理，凭证可查</p></div>
+              </li>
+            </ol>
+          </section>
+
+          <section class="cdk-security">
+            <h3>安全提示</h3>
+            <p>卡密仅用于本次校验与兑换；兑换结果绑定当前设备，请勿在公共设备保存登录态。</p>
+          </section>
+        </aside>
       </div>
 
       <!-- 2 preflight -->
@@ -2439,5 +2551,322 @@ function resetAll() {
   .result-next b { font-size: 12px; }
   .result-next p { font-size: 10.5px; }
   .result-device-note { font-size: 10px; }
+}
+
+/* ── 兑换第 1 步：输入卡密 ─────────────────────────────────────────── */
+.cdk-hero-aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex: none;
+  padding-bottom: 6px;
+  text-align: right;
+}
+.cdk-hero-aside > span { color: var(--ink-3); font-size: 11px; }
+.cdk-hero-aside a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--brd-2);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.cdk-hero-aside a svg { width: 11px; height: 11px; }
+
+.cdk-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cdk-badges li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--brd);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.cdk-badges svg { width: 13px; height: 13px; color: var(--ink-3); }
+
+.cdk-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 22px;
+  align-items: start;
+  padding-bottom: 26px;
+}
+.cdk-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.cdk-aside { min-width: 0; }
+
+.cdk-form-card { padding: 28px 30px 24px; }
+.cdk-form-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.cdk-micro {
+  display: block;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.cdk-form-head h2 {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+.cdk-form-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 5px 9px;
+  border: 1px solid var(--good-line, #cde8d9);
+  border-radius: 999px;
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cdk-form-badge i { width: 5px; height: 5px; border-radius: 50%; background: var(--good); }
+
+.cdk-field { margin-top: 24px; }
+.cdk-field-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+.cdk-field-label span:first-child { color: var(--ink-2); font-size: 11.5px; font-weight: 600; }
+.cdk-field-label span:last-child { color: var(--ink-3); font-size: 10px; }
+.cdk-input-shell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 54px;
+  padding: 0 16px;
+  border: 1px solid var(--brd);
+  border-radius: 14px;
+  background: var(--surface-2);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cdk-input-shell:focus-within {
+  border-color: var(--ink-3);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.cdk-input-shell > svg { width: 18px; height: 18px; flex: none; color: var(--ink-3); }
+.cdk-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+.cdk-input::placeholder { color: var(--ink-4); }
+.cdk-hint { margin-top: 8px; color: var(--ink-3); font-size: 10.5px; line-height: 1.5; }
+.cdk-error { margin-top: 14px; }
+.cdk-preview {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--brd);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.cdk-preview-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+.cdk-preview-row b { color: var(--ink); font-weight: 700; }
+.cdk-preview p { margin: 4px 0 0; color: var(--ink-3); font-size: 10.5px; line-height: 1.5; }
+.cdk-cta.btn-primary {
+  width: 100%;
+  height: 48px;
+  padding: 0 20px;
+  margin-top: 22px;
+  border-radius: 999px;
+  font-size: 14px;
+}
+.cdk-cta svg { width: 14px; height: 14px; }
+.cdk-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0 0;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+.cdk-note svg { width: 12px; height: 12px; flex: none; }
+
+.cdk-tips-card { padding: 20px 22px 8px; }
+.cdk-tips-card h3 { margin: 0 0 2px; color: var(--ink); font-size: 12px; font-weight: 800; letter-spacing: 0.02em; }
+.cdk-tips-list { margin: 0; padding: 0; list-style: none; }
+.cdk-tips-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 0;
+  border-top: 1px solid var(--brd);
+}
+.cdk-tips-list li:first-child { border-top: 0; }
+.cdk-tips-num {
+  padding-top: 2px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+}
+.cdk-tips-list b { display: block; color: var(--ink); font-size: 12.5px; font-weight: 700; }
+.cdk-tips-list p { margin: 3px 0 0; color: var(--ink-3); font-size: 11px; line-height: 1.55; }
+
+.cdk-flow-card {
+  position: relative;
+  overflow: hidden;
+  padding: 24px 26px;
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(360px 200px at 18% -22%, color-mix(in srgb, var(--bg) 13%, transparent), transparent 62%),
+    radial-gradient(300px 220px at 108% 112%, color-mix(in srgb, var(--good) 14%, transparent), transparent 64%),
+    var(--ink);
+  color: var(--bg);
+  box-shadow: 0 30px 60px -40px rgba(0, 0, 0, 0.65);
+}
+.cdk-flow-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: color-mix(in srgb, var(--bg) 48%, transparent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+}
+.cdk-flow-card h3 {
+  margin: 20px 0 0;
+  color: var(--bg);
+  font-family: var(--font-display);
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+.cdk-flow-sub { margin: 6px 0 0; color: color-mix(in srgb, var(--bg) 46%, transparent); font-size: 11.5px; }
+.cdk-flow-steps { position: relative; margin: 22px 0 0; padding: 0; list-style: none; }
+.cdk-flow-steps::before {
+  content: '';
+  position: absolute;
+  top: 17px;
+  bottom: 28px;
+  left: 13px;
+  width: 1px;
+  background: color-mix(in srgb, var(--bg) 14%, transparent);
+}
+.cdk-flow-steps li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 0;
+}
+.cdk-flow-num {
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 1px solid color-mix(in srgb, var(--bg) 18%, transparent);
+  border-radius: 50%;
+  background: var(--ink);
+  color: color-mix(in srgb, var(--bg) 40%, transparent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+.cdk-flow-steps b {
+  display: block;
+  padding-top: 3px;
+  color: color-mix(in srgb, var(--bg) 56%, transparent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cdk-flow-steps p { margin: 3px 0 0; color: color-mix(in srgb, var(--bg) 30%, transparent); font-size: 10.5px; line-height: 1.5; }
+.cdk-flow-steps li.is-active .cdk-flow-num { border-color: var(--bg); background: var(--bg); color: var(--ink); font-weight: 700; }
+.cdk-flow-steps li.is-active b { color: var(--bg); }
+.cdk-flow-steps li.is-active p { color: color-mix(in srgb, var(--bg) 48%, transparent); }
+.cdk-flow-steps em {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-top: 5px;
+  color: var(--good);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-style: normal;
+  letter-spacing: 0.08em;
+}
+.cdk-flow-steps em::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: var(--good); }
+
+.cdk-security {
+  padding: 18px 20px;
+  border: 1px solid var(--brd);
+  border-radius: 18px;
+  background: var(--surface);
+}
+.cdk-security h3 { margin: 0; color: var(--ink); font-size: 11.5px; font-weight: 800; letter-spacing: 0.02em; }
+.cdk-security p { margin: 6px 0 0; color: var(--ink-3); font-size: 10.5px; line-height: 1.65; }
+
+@media (max-width: 900px) {
+  .cdk-hero { flex-direction: column; align-items: stretch; gap: 20px; padding: 26px 0 24px; }
+  .cdk-hero-aside { align-items: flex-start; padding: 0; text-align: left; }
+  .cdk-grid { grid-template-columns: minmax(0, 1fr); }
+  .cdk-aside { order: 2; }
+  .cdk-form-card { padding: 24px 22px 22px; }
+}
+
+@media (min-width: 641px) and (max-width: 900px) {
+  .cdk-aside { max-width: 460px; }
+}
+
+@media (max-width: 640px) {
+  .cdk-hero { gap: 16px; padding: 22px 0; }
+  .cdk-hero-aside { display: none; }
+  .cdk-badges { margin-top: 15px; gap: 6px; }
+  .cdk-badges li { padding: 5px 9px; font-size: 10.5px; }
+  .cdk-form-card { padding: 20px 16px 18px; border-radius: 18px; }
+  .cdk-form-head h2 { font-size: 21px; }
+  .cdk-form-badge { padding: 4px 8px; font-size: 9px; }
+  .cdk-field { margin-top: 20px; }
+  .cdk-input-shell { height: 48px; padding: 0 13px; border-radius: 12px; }
+  .cdk-input { font-size: 12px; }
+  .cdk-cta.btn-primary { height: 44px; margin-top: 18px; font-size: 13px; }
+  .cdk-tips-card { padding: 18px 18px 6px; border-radius: 18px; }
+  .cdk-tips-list li { padding: 12px 0; }
+  .cdk-flow-card { padding: 22px 20px; border-radius: 18px; }
+  .cdk-flow-card h3 { font-size: 23px; }
+  .cdk-flow-steps b { font-size: 12px; }
+  .cdk-flow-steps p { font-size: 10px; }
+  .cdk-security { border-radius: 16px; }
 }
 </style>
