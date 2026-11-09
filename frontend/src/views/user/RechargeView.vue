@@ -23,7 +23,7 @@
           <div class="result-hero-copy">
             <div class="result-eyebrow">REDEEM RESULT <em>· {{ resultToneText }}</em></div>
             <h1>{{ resultTitle }}</h1>
-            <p>{{ resultSubtitle }}</p>
+            <p v-if="resultSubtitle">{{ resultSubtitle }}</p>
           </div>
           <div class="result-actions">
             <router-link class="btn-secondary result-action" to="/billing">查询账单</router-link>
@@ -246,7 +246,7 @@
               <span>仅本设备可见</span>
             </div>
             <dl class="result-facts">
-              <div class="result-fact">
+              <div class="result-fact result-fact--email">
                 <dt>兑换账号</dt>
                 <dd class="is-mono">
                   {{ displayResultEmail || '—' }}
@@ -256,29 +256,21 @@
                 </dd>
               </div>
               <div class="result-fact">
-                <dt>支付卡片</dt>
-                <dd>{{ cardText }}</dd>
-              </div>
-              <div class="result-fact">
                 <dt>开通产品</dt>
                 <dd>{{ resultPlanText }}</dd>
               </div>
               <div class="result-fact">
-                <dt>支付渠道</dt>
-                <dd>{{ paymentText }}</dd>
+                <dt>{{ resultTimeLabel }}</dt>
+                <dd class="is-mono">{{ resultCompletedText }}</dd>
               </div>
-              <div class="result-fact">
-                <dt>订单号</dt>
+              <div class="result-fact result-fact--code">
+                <dt>CDK 卡密</dt>
                 <dd class="is-mono">
-                  {{ resultOrderId || '—' }}
-                  <button v-if="resultOrderId" type="button" class="result-copy" aria-label="复制订单号" @click="copyText(resultOrderId, '订单号已复制')">
+                  {{ resultCdkCode || '—' }}
+                  <button v-if="resultCdkCode" type="button" class="result-copy" aria-label="复制 CDK" @click="copyText(resultCdkCode, 'CDK 已复制')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
                   </button>
                 </dd>
-              </div>
-              <div class="result-fact">
-                <dt>{{ resultTimeLabel }}</dt>
-                <dd class="is-mono">{{ resultCompletedText }}</dd>
               </div>
             </dl>
           </section>
@@ -321,18 +313,13 @@
             <button v-if="!polling" type="button" class="result-link" @click="startPoll">重新查询结果</button>
             <span v-else class="result-foot-live"><i></i>自动刷新中</span>
           </div>
-
-          <details v-if="resultBody" class="result-advanced">
-            <summary class="result-advanced-summary">高级信息</summary>
-            <pre>{{ resultPretty }}</pre>
-          </details>
         </section>
 
         <aside class="result-aside">
           <section class="result-receipt">
             <div class="receipt-top">
               <span>REDEEM RECEIPT</span>
-              <span>NO. {{ resultOrderId || '—' }}</span>
+              <span>CDK {{ resultCdkCode || '—' }}</span>
             </div>
             <div class="receipt-status">
               <span class="receipt-ring" :class="'is-' + resultTone">
@@ -351,7 +338,6 @@
             <div class="receipt-perf" aria-hidden="true"></div>
             <dl class="receipt-rows">
               <div class="receipt-row"><dt>ACCOUNT</dt><dd>{{ displayResultEmail || '—' }}</dd></div>
-              <div class="receipt-row"><dt>CARD</dt><dd>{{ cardText }}</dd></div>
               <div class="receipt-row"><dt>PAID</dt><dd>{{ paymentTimeText }}</dd></div>
             </dl>
             <button type="button" class="receipt-btn" @click="copyReceipt">
@@ -379,7 +365,7 @@
               </li>
               <li>
                 <span class="result-next-num">03</span>
-                <div><b>超过 10 分钟未生效</b><p>凭订单号联系客服，无需重复提交。</p></div>
+                <div><b>超过 10 分钟未生效</b><p>凭 CDK 卡密联系客服，无需重复提交。</p></div>
               </li>
             </ol>
           </section>
@@ -577,8 +563,6 @@ watch(
   () => saveProgress(),
   { deep: true },
 )
-
-const resultPretty = computed(() => JSON.stringify(resultBody.value, null, 2))
 
 const targetPlan = computed(() => {
   const plan = String(previewInfo.value?.plan || previewInfo.value?.plan_type || '').toLowerCase()
@@ -878,7 +862,7 @@ const RESULT_STAGE_DEFS: { key: string; label: string; steps: string[] }[] = [
   { key: 'card', label: '开卡 · 绑卡', steps: ['checkout'] },
   { key: 'pay', label: '支付扣款', steps: ['payment', 'invoice'] },
   { key: 'reconcile', label: '对账确认', steps: ['reconcile'] },
-  { key: 'activate', label: '订阅生效', steps: ['subscription', 'completed', 'renewal'] },
+  { key: 'activate', label: '订阅生效', steps: ['subscription', 'renewal'] },
 ]
 
 function pad2(n: number) {
@@ -908,7 +892,7 @@ function fmtDateSeconds(v: any) {
 
 function firstValue(...values: any[]) {
   for (const value of values) {
-    if (value !== undefined && value !== null && String(value).trim() !== '') return String(value)
+    if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim()
   }
   return ''
 }
@@ -959,6 +943,23 @@ function stageStateMessage(state: StageState) {
     bad: '该阶段未通过，请查看下方原因。',
     idle: '',
   }[state]
+}
+
+/** 完成阶段优先用成功事件的可读消息；接口消息仍是“正在准备…”时回落到阶段结论。 */
+function stageDoneMessage(key: string, events: any[]) {
+  const success = [...events].reverse().find((event) => {
+    const category = String(event?.category || '').toLowerCase()
+    return ['success', 'completed', 'done'].includes(category) && event?.public_message
+  })
+  const message = String(success?.public_message || '').trim()
+  if (message && !/(正在|等待|准备|处理中|pending|running)/i.test(message)) return message
+  return {
+    verify: '凭证校验通过。',
+    card: '支付卡片已绑定，资金确认到账。',
+    pay: '支付已完成。',
+    reconcile: '订单金额与卡台流水一致。',
+    activate: '套餐已核验生效。',
+  }[key] || '已完成'
 }
 
 function categoryLabel(value: any) {
@@ -1043,12 +1044,10 @@ const resultPlanText = computed(() => {
   return label
 })
 
-const resultOrderId = computed(() => firstValue(
-  resultOrder.value.id,
-  resultOrder.value.order_id,
-  resultOrder.value.number,
-  resultBody.value?.order_id,
-  resultBody.value?.data?.order_id,
+const resultCdkCode = computed(() => firstValue(
+  resultBody.value?.cdk_code,
+  resultBody.value?.data?.cdk_code,
+  code.value,
 ))
 
 const resultLastAt = computed(() => {
@@ -1074,29 +1073,18 @@ const paymentEvent = computed(() => {
 
 const paymentTimeText = computed(() => {
   if (isCardAttach.value) return '无需扣款'
+  if (resultTone.value === 'good') {
+    const at = paymentEvent.value?.created_at || resultLastAt.value
+    return at ? `${fmtShortTime(at)} · Stripe` : '已完成'
+  }
   const category = String(paymentEvent.value?.category || '').toLowerCase()
   if (paymentEvent.value?.created_at) {
-    if (['success', 'completed', 'done'].includes(category)) return `${fmtShortTime(paymentEvent.value.created_at)} · Stripe`
     if (['failed', 'error'].includes(category)) return '支付失败'
     return '待确认'
   }
-  if (resultTone.value === 'good' && resultLastAt.value) return `${fmtShortTime(resultLastAt.value)} · Stripe`
-  if (resultTone.value === 'good') return '已完成'
   if (resultTone.value === 'bad') return '未扣款'
   return '待扣款'
 })
-
-const paymentText = computed(() => {
-  if (isCardAttach.value) return '绑卡 · 未扣款'
-  const category = String(paymentEvent.value?.category || '').toLowerCase()
-  if (['success', 'completed', 'done'].includes(category)) return 'Stripe · 已扣款'
-  if (resultTone.value === 'bad') return paymentEvent.value ? 'Stripe · 支付失败' : 'Stripe · 未扣款'
-  if (category === 'review') return 'Stripe · 审核中'
-  if (paymentEvent.value) return 'Stripe · 处理中'
-  return 'Stripe · 待扣款'
-})
-
-const cardText = computed(() => (resultCardLastFour.value ? `•••• ${resultCardLastFour.value}` : '开卡后显示尾号'))
 
 const isCardAttach = computed(() => {
   const flow = String(previewInfo.value?.plan_flow || '').toLowerCase()
@@ -1112,15 +1100,12 @@ const resultTitle = computed(() => ({
 }[resultTone.value]))
 
 const resultSubtitle = computed(() => {
-  if (resultMessage.value) return resultMessage.value
-  if (resultTone.value === 'good') {
-    return isCardAttach.value
-      ? `${resultPlanText.value === '—' ? '本次兑换' : resultPlanText.value} 支付卡绑定完成，本次未扣款。`
-      : `${resultPlanText.value === '—' ? '本次兑换' : resultPlanText.value} 已开通，Stripe 扣款已确认。`
-  }
   if (resultTone.value === 'warn') return '订单已提交，正在审核。请勿重复提交，结果会自动刷新。'
   if (resultTone.value === 'bad') return '本次兑换未完成，请根据下方原因处理。'
-  return resultStatus.value ? '正在处理，结果会自动刷新；请保持页面打开。' : '正在获取最新状态…'
+  if (resultTone.value === 'info') {
+    return resultStatus.value ? '正在处理，结果会自动刷新；请保持页面打开。' : '正在获取最新状态…'
+  }
+  return ''
 })
 
 const resultHeadTitle = computed(() => {
@@ -1191,7 +1176,9 @@ const resultStages = computed(() => {
       state,
       events: group.events,
       count: group.events.length,
-      time: timeSource ? fmtShortTime(timeSource.created_at) : '',
+      time: timeSource
+        ? fmtShortTime(timeSource.created_at)
+        : (completed && index === groups.length - 1 ? fmtShortTime(resultLastAt.value) : ''),
     }
   })
 })
@@ -1209,15 +1196,16 @@ const resultMetaText = computed(() => {
 const resultRows = computed(() => resultStages.value
   .filter((stage) => stage.count > 0 || ['active', 'warn', 'bad'].includes(stage.state))
   .map((stage) => {
-    const lastEvent = stage.events[stage.events.length - 1]
-    const messageEvent = [...stage.events].reverse().find((event) => event?.public_message) || lastEvent
+    const latestMessage = [...stage.events].reverse().find((event) => event?.public_message)?.public_message
     return {
       key: stage.key,
       label: stage.label,
       state: stage.state,
       time: stage.time,
       chip: stageStateLabel(stage.state),
-      message: messageEvent?.public_message || messageEvent?.to_status || stageStateMessage(stage.state),
+      message: stage.state === 'done'
+        ? stageDoneMessage(stage.key, stage.events)
+        : (latestMessage || stageStateMessage(stage.state)),
       duration: stageDuration(stage.events),
     }
   }))
@@ -1234,7 +1222,7 @@ const receiptStatusText = computed(() => {
 
 const resultFootText = computed(() => {
   if (resultTone.value === 'good') return '兑换已完成 · 结果已保存至本设备'
-  if (resultTone.value === 'bad') return '兑换已结束 · 可凭订单号联系客服'
+  if (resultTone.value === 'bad') return '兑换已结束 · 可凭 CDK 卡密联系客服'
   if (resultTone.value === 'warn') return '审核中 · 每 3 秒自动刷新'
   return '处理中 · 每 3 秒自动刷新'
 })
@@ -1251,8 +1239,7 @@ function copyReceipt() {
     `状态：${receiptStatusText.value}`,
     `产品：${resultPlanText.value}`,
     `账号：${displayResultEmail.value || '—'}`,
-    `卡片：${cardText.value}`,
-    `订单号：${resultOrderId.value || '—'}`,
+    `CDK 卡密：${resultCdkCode.value || '—'}`,
     `完成时间：${resultCompletedText.value}`,
   ]
   void copyText(lines.join('\n'), '凭证信息已复制')
@@ -1943,7 +1930,7 @@ function resetAll() {
 .result-link:hover { color: var(--ink); border-color: var(--ink-3); }
 .result-facts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 19px 26px;
   margin: 18px 0 0;
 }
@@ -2171,6 +2158,11 @@ function resetAll() {
   font-size: 9px;
   letter-spacing: 0.16em;
   white-space: nowrap;
+}
+.receipt-top span:last-child {
+  max-width: 68%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .receipt-status {
   display: flex;
@@ -2422,6 +2414,9 @@ function resetAll() {
   .result-fact dt { font-size: 8.5px; letter-spacing: 0.1em; }
   .result-fact dd { margin-top: 5px; font-size: 12px; }
   .result-fact dd.is-mono { font-size: 10.5px; }
+  .result-fact--email,
+  .result-fact--code { grid-column: 1 / -1; }
+  .result-fact--code dd { font-size: 12px; }
   .result-events { margin-top: 15px; }
   .result-events::before { left: 59px; top: 10px; bottom: 12px; }
   .result-event { grid-template-columns: 48px 22px minmax(0, 1fr); padding-bottom: 15px; }
