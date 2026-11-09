@@ -1,9 +1,9 @@
 <template>
   <div class="u-page">
-    <UserPageHeader v-if="step !== 1 && step !== 4" :eyebrow="t('hero.redeemEyebrow')" :title="t('hero.redeemTitle')" :subtitle="t('hero.redeemSub')" badges />
+    <UserPageHeader v-if="step !== 1 && step !== 2 && step !== 4" :eyebrow="t('hero.redeemEyebrow')" :title="t('hero.redeemTitle')" :subtitle="t('hero.redeemSub')" badges />
     <UserPageHeader v-else hide-hero :title="t('hero.redeemTitle')" />
-    <div class="u-main" :class="(step === 1 || step === 4) ? 'result-wrap' : 'max-w-3xl'">
-      <template v-if="step === 2 || step === 3">
+    <div class="u-main" :class="(step === 1 || step === 2 || step === 4) ? 'result-wrap' : 'max-w-3xl'">
+      <template v-if="step === 3">
         <RedeemModeTabs />
         <!-- redeem-flow v2: no public fee reference -->
         <!-- steps -->
@@ -45,6 +45,37 @@
               查询卡密状态
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7" /><path d="M8 7h9v9" /></svg>
             </router-link>
+          </div>
+        </section>
+      </template>
+      <template v-else-if="step === 2">
+        <div class="result-subnav">
+          <div class="result-crumb">{{ t('hero.redeemEyebrow') }} <i>/</i> <b>填写凭证</b> <i>/</i> STEP 02</div>
+          <RedeemModeTabs compact />
+        </div>
+        <section class="result-hero cdk-hero">
+          <div class="result-hero-copy">
+            <div class="result-eyebrow">REDEEM <em>· 填写凭证</em></div>
+            <h1>{{ t('hero.redeemTitle') }}</h1>
+            <p>{{ credStepSubtitle }}</p>
+            <ul class="cdk-badges">
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></svg>
+                {{ t('hero.badgeOfficial') }}
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                {{ t('hero.badgeSelf') }}
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                {{ t('hero.badgeTrack') }}
+              </li>
+            </ul>
+          </div>
+          <div class="cred-hero-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+            <div><b>仅用于本次预检</b><span>不保存登录态，不会自动兑换</span></div>
           </div>
         </section>
       </template>
@@ -160,69 +191,142 @@
       </div>
 
       <!-- 2 preflight -->
-      <div v-show="step === 2" class="card space-y-4">
-        <h2 class="text-xl font-bold text-ink">{{ isGrok ? t('grok.credential') : isXPremiumPlan(targetPlan) ? t('xPremium.credential') : 'ChatGPT 凭证' }}</h2>
-        <div v-if="!isXPremiumPlan(targetPlan) && !isGrok" class="flex gap-2">
-          <button type="button" class="btn-secondary !py-1" :class="{ 'ring-2': credMode === 'session' }" @click="credMode = 'session'">Session</button>
-        </div>
-        <template v-if="credMode === 'session'">
-          <p v-if="isGrok" class="text-sm text-muted">{{ t('grok.hint') }}</p>
-          <p v-else-if="isXPremiumPlan(targetPlan)" class="text-sm text-muted">{{ t('xPremium.hint') }}</p>
-          <p v-else class="text-sm text-muted">打开
-            <a class="app-link" href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener">chatgpt.com/api/auth/session</a>
-            复制<strong>完整 JSON</strong>（必须含 <code>sessionToken</code>）。已禁用纯 Access Token。
-          </p>
-          <input
-            ref="sessionFileInput"
-            class="sr-only"
-            type="file"
-            :accept="SESSION_FILE_ACCEPT"
-            @change="onSessionFileChange"
-          />
-          <div
-            class="session-dropzone"
-            :class="{ 'is-dragging': isSessionDragActive }"
-            @dragenter.prevent="onSessionDragEnter"
-            @dragover.prevent="onSessionDragOver"
-            @dragleave.prevent="onSessionDragLeave"
-            @drop.prevent="onSessionFileDrop"
-          >
-            <textarea
-              v-model="sessionRaw"
-              class="input h-36 font-mono text-xs"
-              :placeholder="isGrok ? t('grok.placeholder') : isXPremiumPlan(targetPlan) ? t('xPremium.placeholder') : 'Session JSON (sessionToken)'"
-              @input="sessionFileName = ''"
-            />
-            <div v-if="isSessionDragActive" class="session-drop-overlay" aria-hidden="true">
-              {{ t('recharge.fileDropActive') }}
+      <div v-show="step === 2" class="cdk-grid">
+        <div class="cdk-col">
+          <section class="card cred-card">
+            <div class="cred-head">
+              <div>
+                <span class="cdk-micro">STEP 02 · 登录态</span>
+                <h2>{{ isGrok ? t('grok.credential') : isXPremiumPlan(targetPlan) ? t('xPremium.credential') : 'ChatGPT 凭证' }}</h2>
+              </div>
+              <span class="cred-badge"><i></i>本地读取</span>
             </div>
-          </div>
-          <div class="session-file-actions">
-            <button
-              type="button"
-              class="btn-secondary session-file-button"
-              :disabled="busy || readingSessionFile"
-              @click="openSessionFilePicker"
-            >
-              <el-icon><Document /></el-icon>
-              {{ readingSessionFile ? t('recharge.fileReading') : t('recharge.fileButton') }}
-            </button>
-            <span v-if="sessionFileName" class="text-xs text-muted break-all">
-              {{ t('recharge.fileLoaded', { name: sessionFileName }) }}
-            </span>
-          </div>
-          <p class="text-xs text-muted">{{ t('recharge.fileHint') }}</p>
-          <p class="text-xs text-subtle">{{ t('recharge.filePrivacy') }}</p>
-        </template>
-        <template v-else>
-          <input v-model="email" class="input" placeholder="email@outlook.com" />
-          <input v-model="password" class="input" type="password" placeholder="邮箱密码" />
-        </template>
-        <div v-if="error" class="alert alert-error">{{ error }}</div>
-        <div class="flex gap-3">
-          <button class="btn-secondary flex-1" @click="step = 1">上一步</button>
-          <button class="btn-primary flex-1" :disabled="busy || readingSessionFile" @click="doPreflight">{{ busy ? '预检中…' : '预检' }}</button>
+
+            <div v-if="!isXPremiumPlan(targetPlan) && !isGrok" class="cred-mode">
+              <span>凭证方式</span>
+              <button type="button" class="cred-mode-btn" :class="{ active: credMode === 'session' }" @click="credMode = 'session'">
+                Session
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12.5 5 5L20 6.5" /></svg>
+              </button>
+            </div>
+
+            <template v-if="credMode === 'session'">
+              <div class="cred-help">
+                <span class="cred-help-icon">i</span>
+                <div>
+                  <p v-if="isGrok">{{ t('grok.hint') }}</p>
+                  <p v-else-if="isXPremiumPlan(targetPlan)">{{ t('xPremium.hint') }}</p>
+                  <p v-else>打开
+                    <a class="app-link" href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener">chatgpt.com/api/auth/session</a>
+                    复制<strong>完整 JSON</strong>（必须含 <code>sessionToken</code>）。
+                  </p>
+                  <span v-if="!isGrok && !isXPremiumPlan(targetPlan)" class="cred-warn">已禁用纯 Access Token</span>
+                </div>
+              </div>
+
+              <input
+                ref="sessionFileInput"
+                class="sr-only"
+                type="file"
+                :accept="SESSION_FILE_ACCEPT"
+                @change="onSessionFileChange"
+              />
+
+              <div
+                class="cred-editor session-dropzone"
+                :class="{ 'is-dragging': isSessionDragActive }"
+                @dragenter.prevent="onSessionDragEnter"
+                @dragover.prevent="onSessionDragOver"
+                @dragleave.prevent="onSessionDragLeave"
+                @drop.prevent="onSessionFileDrop"
+              >
+                <div class="cred-editor-bar"><span>SESSION JSON</span><span>必须包含 sessionToken</span></div>
+                <textarea
+                  v-model="sessionRaw"
+                  class="cred-textarea"
+                  :placeholder="isGrok ? t('grok.placeholder') : isXPremiumPlan(targetPlan) ? t('xPremium.placeholder') : '粘贴完整 Session JSON（sessionToken）'"
+                  @input="sessionFileName = ''"
+                />
+                <div v-if="isSessionDragActive" class="session-drop-overlay" aria-hidden="true">
+                  {{ t('recharge.fileDropActive') }}
+                </div>
+              </div>
+
+              <div class="cred-file-row">
+                <button
+                  type="button"
+                  class="cred-file-btn"
+                  :disabled="busy || readingSessionFile"
+                  @click="openSessionFilePicker"
+                >
+                  <el-icon><Document /></el-icon>
+                  {{ readingSessionFile ? t('recharge.fileReading') : t('recharge.fileButton') }}
+                </button>
+                <span v-if="sessionFileName" class="cred-file-name break-all">
+                  {{ t('recharge.fileLoaded', { name: sessionFileName }) }}
+                </span>
+              </div>
+              <p class="cred-hint">{{ t('recharge.fileHint') }}</p>
+              <p class="cred-privacy">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+                {{ t('recharge.filePrivacy') }}
+              </p>
+            </template>
+            <template v-else>
+              <div class="cred-mailbox">
+                <input v-model="email" class="input" placeholder="email@outlook.com" />
+                <input v-model="password" class="input" type="password" placeholder="邮箱密码" />
+              </div>
+            </template>
+
+            <div v-if="error" class="alert alert-error cred-error">{{ error }}</div>
+
+            <div class="cred-actions">
+              <button class="cred-back" type="button" @click="step = 1">上一步</button>
+              <button class="cred-submit" type="button" :disabled="busy || readingSessionFile" @click="doPreflight">
+                {{ busy ? '预检中…' : '预检' }}
+              </button>
+            </div>
+          </section>
         </div>
+
+        <aside class="cdk-col cdk-aside">
+          <section class="cdk-flow-card">
+            <div class="cdk-flow-top"><span>REDEEM FLOW</span><span>4 STEPS</span></div>
+            <h3>兑换流程</h3>
+            <p class="cdk-flow-sub">从卡密到开通，四步完成。</p>
+            <ol class="cdk-flow-steps">
+              <li class="is-done">
+                <span class="cdk-flow-num">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7" /></svg>
+                </span>
+                <div><b>{{ steps[0] }}</b><p>卡密与套餐已校验</p></div>
+              </li>
+              <li class="is-active">
+                <span class="cdk-flow-num">02</span>
+                <div><b>{{ steps[1] }}</b><p>粘贴登录态或上传文件</p></div>
+                <em>当前</em>
+              </li>
+              <li>
+                <span class="cdk-flow-num">03</span>
+                <div><b>{{ steps[2] }}</b><p>核对账号与目标套餐</p></div>
+              </li>
+              <li>
+                <span class="cdk-flow-num">04</span>
+                <div><b>{{ steps[3] }}</b><p>自动处理，凭证可查</p></div>
+              </li>
+            </ol>
+          </section>
+
+          <section class="cdk-security cred-security">
+            <h3>预检前确认</h3>
+            <ol class="cred-security-list">
+              <li><span>01</span><div><b>登录态仅用于本次预检</b><p>不会保存到浏览器存储。</p></div></li>
+              <li><span>02</span><div><b>文件在本地读取</b><p>原始文件不上传。</p></div></li>
+              <li><span>03</span><div><b>预检不会自动兑换</b><p>确认账号后仍需再次提交。</p></div></li>
+            </ol>
+          </section>
+        </aside>
       </div>
 
       <!-- 3 redeem -->
@@ -687,6 +791,12 @@ const targetPlan = computed(() => {
 const isGrok = computed(() => isGrokPlan(targetPlan.value) && !isXPremiumPlan(targetPlan.value))
 // GPT / X：必须有预检票；Grok：预检通过且没有阻塞项即可。
 const canRedeem = computed(() => isGrok.value ? !!grokSession.value && !grokBlockingReason.value : !!preflightToken.value)
+
+const credStepSubtitle = computed(() => {
+  if (isGrok.value) return '粘贴 Grok 登录态，核对账号后继续。'
+  if (isXPremiumPlan(targetPlan.value)) return '粘贴 X 登录 Cookie JSON，核对账号后继续。'
+  return '粘贴 ChatGPT Session JSON，核对账号与套餐后继续。'
+})
 
 const subscriptionStatusText = computed(() => {
   if (account.value.subscriptionHasActive === true) return '有效'
@@ -2868,5 +2978,244 @@ function resetAll() {
   .cdk-flow-steps b { font-size: 12px; }
   .cdk-flow-steps p { font-size: 10px; }
   .cdk-security { border-radius: 16px; }
+}
+
+/* ── 兑换第 2 步：填写凭证 ─────────────────────────────────────────── */
+.cred-hero-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 230px;
+  padding: 10px 12px;
+  border: 1px solid var(--brd);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  text-align: left;
+}
+.cred-hero-note > svg { width: 13px; height: 13px; flex: none; margin-top: 1px; color: var(--ink-3); }
+.cred-hero-note b { display: block; color: var(--ink); font-size: 11.5px; font-weight: 700; }
+.cred-hero-note span { display: block; margin-top: 2px; color: var(--ink-3); font-size: 10.5px; line-height: 1.5; }
+
+.cred-card { padding: 28px 30px 24px; }
+.cred-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.cred-head h2 {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+.cred-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 5px 9px;
+  border: 1px solid var(--good-line, #cde8d9);
+  border-radius: 999px;
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cred-badge i { width: 5px; height: 5px; border-radius: 50%; background: var(--good); }
+
+.cred-mode { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+.cred-mode > span { color: var(--ink-3); font-size: 11px; }
+.cred-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.cred-mode-btn svg { width: 11px; height: 11px; color: var(--good); }
+
+.cred-help {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--brd);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.cred-help-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--brd-2);
+  border-radius: 50%;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.cred-help p { margin: 0; color: var(--ink-2); font-size: 11.5px; line-height: 1.65; }
+.cred-help a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.cred-help strong { color: var(--ink); font-weight: 700; }
+.cred-help code {
+  padding: 1px 4px;
+  border: 1px solid var(--brd);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.cred-warn {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--warn-soft, #fef3c7);
+  color: var(--warn, #b45309);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+.cred-editor {
+  position: relative;
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid var(--brd);
+  border-radius: 14px;
+  background: var(--surface-2);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cred-editor:focus-within { border-color: var(--ink-3); box-shadow: 0 0 0 3px var(--primary-soft); }
+.cred-editor.is-dragging { border-color: var(--primary); }
+.cred-editor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--brd);
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.cred-textarea {
+  display: block;
+  width: 100%;
+  height: 170px;
+  padding: 14px 16px;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.cred-textarea::placeholder { color: var(--ink-4); }
+
+.cred-file-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.cred-file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--brd-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.cred-file-btn svg { width: 14px; height: 14px; color: var(--ink-3); }
+.cred-file-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.cred-file-name { color: var(--ink-3); font-size: 10.5px; }
+.cred-hint { margin: 8px 0 0; color: var(--ink-3); font-size: 10.5px; line-height: 1.5; }
+.cred-privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 10px 0 0;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  line-height: 1.65;
+}
+.cred-privacy svg { width: 12px; height: 12px; flex: none; margin-top: 1px; }
+.cred-error { margin-top: 14px; }
+
+.cred-actions { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 10px; margin-top: 20px; }
+.cred-back,
+.cred-submit {
+  height: 48px;
+  border-radius: 999px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cred-back { border: 1px solid var(--brd-2); background: transparent; color: var(--ink); }
+.cred-submit { border: 0; background: var(--ink); color: var(--bg); box-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.55); }
+.cred-submit:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+.cred-mailbox { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+
+.cred-security { padding-bottom: 8px; }
+.cred-security-list { margin: 0; padding: 0; list-style: none; }
+.cred-security-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--brd);
+}
+.cred-security-list li:first-child { border-top: 0; }
+.cred-security-list > li > span {
+  padding-top: 2px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+.cred-security-list b { display: block; color: var(--ink); font-size: 11.5px; font-weight: 700; }
+.cred-security-list p { margin: 3px 0 0; color: var(--ink-3); font-size: 10.5px; line-height: 1.5; }
+
+.cdk-flow-steps li.is-done .cdk-flow-num {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--bg) 12%, transparent);
+  color: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+.cdk-flow-steps li.is-done .cdk-flow-num svg { width: 10px; height: 10px; }
+.cdk-flow-steps li.is-done b { color: color-mix(in srgb, var(--bg) 78%, transparent); }
+.cdk-flow-steps li.is-done p { color: color-mix(in srgb, var(--bg) 34%, transparent); }
+
+@media (max-width: 900px) {
+  .cred-hero-note { align-self: flex-start; }
+  .cred-card { padding: 24px 22px 22px; }
+}
+
+@media (max-width: 640px) {
+  .cred-hero-note { display: none; }
+  .cred-card { padding: 20px 16px 18px; border-radius: 18px; }
+  .cred-head h2 { font-size: 21px; }
+  .cred-badge { padding: 4px 8px; font-size: 9px; }
+  .cred-help { padding: 11px 12px; }
+  .cred-help p { font-size: 11px; }
+  .cred-textarea { height: 150px; padding: 12px 13px; font-size: 11.5px; }
+  .cred-actions { grid-template-columns: 1fr 1fr; margin-top: 18px; }
+  .cred-back,
+  .cred-submit { height: 44px; font-size: 12.5px; }
+  .cred-security { border-radius: 16px; }
 }
 </style>
