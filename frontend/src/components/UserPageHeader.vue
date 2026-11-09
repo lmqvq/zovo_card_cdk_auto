@@ -17,7 +17,7 @@
     </div>
   </header>
 
-  <section class="u-hero" :class="{ 'u-hero--compact': compact }">
+  <section v-if="!hideHero" class="u-hero" :class="{ 'u-hero--compact': compact }">
     <span v-if="eyebrow" class="u-eyebrow"><i aria-hidden="true" />{{ eyebrow }}</span>
     <h1 class="u-title">{{ title }}</h1>
     <p v-if="subtitle" class="u-sub">{{ subtitle }}</p>
@@ -43,7 +43,9 @@ withDefaults(defineProps<{
   eyebrow?: string
   badges?: boolean
   compact?: boolean
-}>(), { subtitle: '', eyebrow: '', badges: false, compact: false })
+  /** 结果页等需要自定义标题区时只保留顶栏，默认仍渲染完整页头。 */
+  hideHero?: boolean
+}>(), { subtitle: '', eyebrow: '', badges: false, compact: false, hideHero: false })
 
 const { t } = useI18n({ useScope: 'global' })
 const brand = siteBrand

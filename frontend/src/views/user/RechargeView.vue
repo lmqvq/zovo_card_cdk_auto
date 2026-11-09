@@ -1,17 +1,39 @@
 <template>
   <div class="u-page">
-    <UserPageHeader :eyebrow="t('hero.redeemEyebrow')" :title="t('hero.redeemTitle')" :subtitle="t('hero.redeemSub')" badges />
-    <div class="u-main max-w-3xl">
-      <RedeemModeTabs />
-
-      <!-- redeem-flow v2: no public fee reference -->
-      <!-- steps -->
-      <ol class="stepper" :aria-label="t('hero.redeemTitle')">
-        <li v-for="(s, i) in steps" :key="s" :class="{ 'is-done': step > i + 1, 'is-current': step === i + 1 }" :aria-current="step === i + 1 ? 'step' : undefined">
-          <span class="stepper-dot">{{ i + 1 }}</span>
-          <span class="stepper-label">{{ s }}</span>
-        </li>
-      </ol>
+    <UserPageHeader v-if="step !== 4" :eyebrow="t('hero.redeemEyebrow')" :title="t('hero.redeemTitle')" :subtitle="t('hero.redeemSub')" badges />
+    <UserPageHeader v-else hide-hero :title="t('hero.redeemTitle')" />
+    <div class="u-main" :class="step === 4 ? 'result-wrap' : 'max-w-3xl'">
+      <template v-if="step !== 4">
+        <RedeemModeTabs />
+        <!-- redeem-flow v2: no public fee reference -->
+        <!-- steps -->
+        <ol class="stepper" :aria-label="t('hero.redeemTitle')">
+          <li v-for="(s, i) in steps" :key="s" :class="{ 'is-done': step > i + 1, 'is-current': step === i + 1 }" :aria-current="step === i + 1 ? 'step' : undefined">
+            <span class="stepper-dot">{{ i + 1 }}</span>
+            <span class="stepper-label">{{ s }}</span>
+          </li>
+        </ol>
+      </template>
+      <template v-else>
+        <div class="result-subnav">
+          <div class="result-crumb">卡密兑换 <i>/</i> <b>兑换结果</b> <i>/</i> STEP 04</div>
+          <RedeemModeTabs compact />
+        </div>
+        <section class="result-hero">
+          <div class="result-hero-copy">
+            <div class="result-eyebrow">REDEEM RESULT <em>· {{ resultToneText }}</em></div>
+            <h1>{{ resultTitle }}</h1>
+            <p>{{ resultSubtitle }}</p>
+          </div>
+          <div class="result-actions">
+            <router-link class="btn-secondary result-action" to="/billing">查询账单</router-link>
+            <button class="btn-primary result-action" @click="resetAll">
+              再兑一张
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
+            </button>
+          </div>
+        </section>
+      </template>
 
       <!-- 1 preview -->
       <div v-show="step === 1" class="card space-y-4">
@@ -177,86 +199,198 @@
       </div>
 
       <!-- 4 result -->
-      <div v-show="step === 4" class="card space-y-4">
-        <h2 class="text-xl font-bold text-ink">兑换进度</h2>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <el-tag :type="statusTagType(resultStatus)" size="large">{{ resultStatus || '—' }}</el-tag>
-          <span v-if="resultStage" class="text-sm text-muted mono">阶段 {{ resultStage }}</span>
-          <span v-if="polling" class="text-sm text-muted">
-            <span class="inline-block animate-pulse">●</span> 实时轮询中（约 3s）
-          </span>
-          <span v-else-if="isTerminal(resultStatus)" class="text-sm" :class="resultStatus === 'completed' ? 'text-good' : 'text-muted'">
-            已结束
-          </span>
-        </div>
-
-        <div class="rounded-xl bg-soft p-3 text-sm space-y-2">
-          <div class="flex justify-between gap-3 items-center">
-            <span class="text-muted shrink-0">兑换账号</span>
-            <span class="mono text-ink text-right break-all">{{ displayResultEmail || '—' }}</span>
-          </div>
-          <div class="flex justify-between gap-3 items-center">
-            <span class="text-muted shrink-0">银行卡</span>
-            <span class="mono text-ink">
-              <template v-if="resultCardLastFour">•••• {{ resultCardLastFour }}</template>
-              <template v-else><span class="text-muted">开卡后显示尾号</span></template>
-            </span>
-          </div>
-        </div>
-
-        <div v-if="resultMessage" class="rounded-xl bg-soft p-3 text-sm text-ink">
-          {{ resultMessage }}
-        </div>
-
-        <!-- 进度步骤条（由 stage / events 推导） -->
-        <div class="grid grid-cols-4 gap-2 text-center text-xs">
-          <div
-            v-for="p in progressSteps"
-            :key="p.key"
-            class="rounded-lg border px-2 py-2"
-            :class="p.active ? 'border-primary bg-primary/10 text-ink font-semibold' : 'border-brd text-muted'"
-          >
-            {{ p.label }}
-          </div>
-        </div>
-
-        <!-- 时间线明细（卡台 events） -->
-        <div v-if="timeline.length" class="space-y-0">
-          <div class="text-sm font-medium text-ink mb-2">处理明细</div>
-          <ol class="space-y-3 border-l-2 pl-4" style="border-color: var(--brd)">
-            <li v-for="(ev, idx) in timeline" :key="ev.id || idx" class="relative">
-              <span
-                class="absolute -left-[1.35rem] top-1 h-2.5 w-2.5 rounded-full"
-                :style="{ background: eventDot(ev.category) }"
-              />
-              <div class="flex flex-wrap items-baseline gap-2">
-                <b class="text-sm text-ink">{{ stepLabel(ev.step) }}</b>
-                <el-tag size="small" :type="categoryTag(ev.category)">{{ ev.category || 'pending' }}</el-tag>
-                <span class="text-xs text-subtle">{{ fmtTime(ev.created_at) }}</span>
-              </div>
-              <p class="text-sm text-muted mt-0.5">
-                {{ ev.public_message || ev.to_status || '—' }}
+      <div v-show="step === 4" class="result-grid">
+        <section class="card result-card">
+          <header class="result-head">
+            <div class="result-tone" :class="'is-' + resultTone">
+              <svg v-if="resultTone === 'good'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12.5 5 5L20 6.5" /></svg>
+              <svg v-else-if="resultTone === 'bad'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12" /><path d="M18 6 6 18" /></svg>
+              <svg v-else-if="resultTone === 'warn'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8v5" /><path d="M12 17h.01" /><path d="M10.3 3.9 2.5 17.4A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.6L13.7 3.9a2 2 0 0 0-3.4 0z" /></svg>
+              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+            </div>
+            <div class="result-head-copy">
+              <h2>{{ resultHeadTitle }}</h2>
+              <p>
+                <span class="result-email">{{ displayResultEmail || '—' }}</span>
+                <template v-if="resultLastAt"> · {{ resultHeadVerb }} {{ resultCompletedText }}</template>
               </p>
+            </div>
+            <div class="result-head-meta">
+              <span class="result-pill" :class="'is-' + resultTone"><i></i>{{ statusBadge }}</span>
+              <small>{{ resultMetaText }}</small>
+            </div>
+          </header>
+
+          <div v-if="error" class="alert alert-error result-alert">{{ error }}</div>
+          <div v-if="isTerminal(resultStatus) && resultStatus !== 'completed'" class="alert alert-error result-alert">
+            兑换未成功。若状态为 review / pending 请勿重复提交；可联系发码方或稍后用同一设备再查结果。
+          </div>
+
+          <ol class="result-rail" aria-label="处理阶段">
+            <li v-for="(s, i) in resultStages" :key="s.key" class="result-stage" :class="'is-' + s.state">
+              <span class="result-dot">
+                <svg v-if="s.state === 'done'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7" /></svg>
+                <svg v-else-if="s.state === 'bad'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12" /><path d="M18 6 6 18" /></svg>
+                <svg v-else-if="s.state === 'warn'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8v5" /><path d="M12 17h.01" /></svg>
+                <span v-else-if="s.state === 'active'" class="result-pulse"></span>
+                <template v-else>{{ i + 1 }}</template>
+              </span>
+              <b>{{ s.label }}</b>
+              <time v-if="s.time">{{ s.time }}</time>
             </li>
           </ol>
-        </div>
-        <div v-else-if="polling" class="text-sm text-muted">
-          已提交，等待卡台返回步骤明细…
-        </div>
 
-        <details class="text-xs text-muted">
-          <summary class="cursor-pointer select-none">原始响应（调试）</summary>
-          <pre class="rounded-xl bg-soft p-4 overflow-auto max-h-48 mt-2">{{ resultPretty }}</pre>
-        </details>
+          <section class="result-section">
+            <div class="result-section-head">
+              <h3>兑换详情</h3>
+              <span>仅本设备可见</span>
+            </div>
+            <dl class="result-facts">
+              <div class="result-fact">
+                <dt>兑换账号</dt>
+                <dd class="is-mono">
+                  {{ displayResultEmail || '—' }}
+                  <button v-if="displayResultEmail" type="button" class="result-copy" aria-label="复制账号" @click="copyText(displayResultEmail, '账号已复制')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
+                  </button>
+                </dd>
+              </div>
+              <div class="result-fact">
+                <dt>支付卡片</dt>
+                <dd>{{ cardText }}</dd>
+              </div>
+              <div class="result-fact">
+                <dt>开通产品</dt>
+                <dd>{{ resultPlanText }}</dd>
+              </div>
+              <div class="result-fact">
+                <dt>支付渠道</dt>
+                <dd>{{ paymentText }}</dd>
+              </div>
+              <div class="result-fact">
+                <dt>订单号</dt>
+                <dd class="is-mono">
+                  {{ resultOrderId || '—' }}
+                  <button v-if="resultOrderId" type="button" class="result-copy" aria-label="复制订单号" @click="copyText(resultOrderId, '订单号已复制')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
+                  </button>
+                </dd>
+              </div>
+              <div class="result-fact">
+                <dt>{{ resultTimeLabel }}</dt>
+                <dd class="is-mono">{{ resultCompletedText }}</dd>
+              </div>
+            </dl>
+          </section>
 
-        <div v-if="error" class="alert alert-error">{{ error }}</div>
-        <div v-if="isTerminal(resultStatus) && resultStatus !== 'completed'" class="alert alert-error">
-          兑换未成功。若状态为 review/pending 请勿重复提交；可联系发码方或稍后用同一设备再查结果。
-        </div>
-        <div v-if="resultStatus === 'completed'" class="alert alert-success">开通完成，请到 ChatGPT 账号确认套餐。</div>
-        <button class="btn-secondary" @click="resetAll">再兑一张</button>
+          <section class="result-section">
+            <div class="result-section-head">
+              <h3>处理明细</h3>
+              <button v-if="timeline.length" type="button" class="result-link" @click="showAllEvents = !showAllEvents">
+                {{ showAllEvents ? '收起全部事件' : `展开全部 ${timeline.length} 条事件` }}
+              </button>
+            </div>
+            <ol v-if="resultRows.length" class="result-events">
+              <li v-for="row in resultRows" :key="row.key" class="result-event" :class="'is-' + row.state">
+                <time>{{ row.time || '—' }}</time>
+                <span class="result-node" aria-hidden="true"></span>
+                <div class="result-event-body">
+                  <div class="result-event-top">
+                    <b>{{ row.label }}</b>
+                    <span class="result-chip" :class="'is-' + row.state">{{ row.chip }}</span>
+                    <span v-if="row.duration" class="result-dur">{{ row.duration }}</span>
+                  </div>
+                  <p>{{ row.message }}</p>
+                </div>
+              </li>
+            </ol>
+            <p v-else class="result-empty">{{ polling ? '已提交，等待卡台返回步骤明细…' : '暂无处理明细，可稍后重新查询。' }}</p>
+
+            <ol v-if="showAllEvents && timeline.length" class="result-raw">
+              <li v-for="(ev, idx) in timeline" :key="ev.id || idx">
+                <span class="result-raw-time">{{ fmtShortTime(ev.created_at) }}</span>
+                <b>{{ stepLabel(ev.step) }}</b>
+                <span class="result-chip" :class="categoryChipClass(ev.category)">{{ categoryLabel(ev.category) }}</span>
+                <span class="result-raw-msg">{{ ev.public_message || ev.to_status || '—' }}</span>
+              </li>
+            </ol>
+          </section>
+
+          <div class="result-foot">
+            <span>{{ resultFootText }}</span>
+            <button v-if="!polling" type="button" class="result-link" @click="startPoll">重新查询结果</button>
+            <span v-else class="result-foot-live"><i></i>自动刷新中</span>
+          </div>
+
+          <details v-if="resultBody" class="result-advanced">
+            <summary class="result-advanced-summary">高级信息</summary>
+            <pre>{{ resultPretty }}</pre>
+          </details>
+        </section>
+
+        <aside class="result-aside">
+          <section class="result-receipt">
+            <div class="receipt-top">
+              <span>REDEEM RECEIPT</span>
+              <span>NO. {{ resultOrderId || '—' }}</span>
+            </div>
+            <div class="receipt-status">
+              <span class="receipt-ring" :class="'is-' + resultTone">
+                <svg v-if="resultTone === 'good'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12.5 5 5L20 6.5" /></svg>
+                <svg v-else-if="resultTone === 'bad'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12" /><path d="M18 6 6 18" /></svg>
+                <svg v-else-if="resultTone === 'warn'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8v5" /><path d="M12 17h.01" /></svg>
+                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+              </span>
+              <div>
+                <b>{{ receiptStatusText }}</b>
+                <span>{{ statusBadge }} · {{ receiptDate }}</span>
+              </div>
+            </div>
+            <div class="receipt-product">{{ resultPlanText }}</div>
+            <div class="receipt-sub">本次兑换凭证</div>
+            <div class="receipt-perf" aria-hidden="true"></div>
+            <dl class="receipt-rows">
+              <div class="receipt-row"><dt>ACCOUNT</dt><dd>{{ displayResultEmail || '—' }}</dd></div>
+              <div class="receipt-row"><dt>CARD</dt><dd>{{ cardText }}</dd></div>
+              <div class="receipt-row"><dt>PAID</dt><dd>{{ paymentTimeText }}</dd></div>
+            </dl>
+            <button type="button" class="receipt-btn" @click="copyReceipt">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 8V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3" /><rect x="3" y="8" width="13" height="13" rx="2" /></svg>
+              复制凭证信息
+            </button>
+            <router-link class="receipt-link" to="/billing">查询这笔账单 ↗</router-link>
+            <div class="receipt-foot">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+              仅本设备可查看，请勿公开分享
+            </div>
+          </section>
+
+          <section class="result-next">
+            <h3>接下来</h3>
+            <ol>
+              <li>
+                <span class="result-next-num">01</span>
+                <div><b>登录 ChatGPT 确认兑换结果</b><p>权益或支付方式通常立即生效，未显示请重新登录。</p></div>
+              </li>
+              <li>
+                <span class="result-next-num">02</span>
+                <div><b>保存本次兑换凭证</b><p>复制订单信息，售后核对时更快。</p></div>
+                <button type="button" class="result-mini" @click="copyReceipt">复制</button>
+              </li>
+              <li>
+                <span class="result-next-num">03</span>
+                <div><b>超过 10 分钟未生效</b><p>凭订单号联系客服，无需重复提交。</p></div>
+              </li>
+            </ol>
+          </section>
+
+          <p class="result-device-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v.5" /><path d="M12 11v5" /></svg>
+            兑换结果与本设备绑定。更换设备或清理浏览器数据后，可在「卡密查询」中重新检索。
+          </p>
+        </aside>
       </div>
+
     </div>
   </div>
 </template>
@@ -270,6 +404,7 @@ import { useRoute } from 'vue-router'
 import UserPageHeader from '../../components/UserPageHeader.vue'
 import RedeemModeTabs from '../../components/RedeemModeTabs.vue'
 import { dialog } from '../../lib/dialog'
+import { copyToClipboard } from '../../lib/clipboard'
 import { planLabel, planSatisfied as isSatisfied } from '../../lib/plan'
 import {
   SESSION_FILE_ACCEPT,
@@ -325,6 +460,7 @@ const resultCardLastFour = ref('')
 const resultBody = ref<any>(null)
 const timeline = ref<any[]>([])
 const polling = ref(false)
+const showAllEvents = ref(false)
 let pollTimer: any = null
 const displayResultEmail = computed(() => resultEmail.value || account.value.email || '')
 
@@ -706,28 +842,6 @@ function isTerminal(st: string) {
   return TERMINAL.has(String(st || '').toLowerCase())
 }
 
-function statusTagType(st: string) {
-  const s = String(st || '').toLowerCase()
-  if (s === 'completed') return 'success'
-  if (['declined', 'failed_precharge', 'cancelled', 'failed'].includes(s)) return 'danger'
-  if (['review', 'pending', 'card_open_review', 'card_recharge_review'].includes(s)) return 'warning'
-  return 'info'
-}
-
-function categoryTag(c: string) {
-  if (c === 'success' || c === 'completed') return 'success'
-  if (c === 'failed' || c === 'error') return 'danger'
-  if (c === 'warning') return 'warning'
-  return 'info'
-}
-
-function eventDot(c: string) {
-  if (c === 'success' || c === 'completed') return 'var(--good, #16a34a)'
-  if (c === 'failed' || c === 'error') return 'var(--err, #dc2626)'
-  if (c === 'warning') return 'var(--warn, #d97706)'
-  return 'var(--primary, #2563eb)'
-}
-
 function stepLabel(stepKey: string) {
   const map: Record<string, string> = {
     queued: '排队受理',
@@ -755,30 +869,394 @@ function fmtTime(v: any) {
   }
 }
 
-/** 粗粒度进度条：受理 → 开卡/资金 → 支付 → 开通 */
-const progressSteps = computed(() => {
-  const keys = [
-    { key: 'accept', label: '受理' },
-    { key: 'card', label: '开卡/资金' },
-    { key: 'pay', label: '支付' },
-    { key: 'done', label: '开通' },
-  ]
-  const st = String(resultStatus.value || '').toLowerCase()
-  const stage = String(resultStage.value || '').toLowerCase()
-  let idx = 0
-  if (st === 'completed') idx = 3
-  else if (['declined', 'failed_precharge', 'cancelled', 'failed'].includes(st)) {
-    // 停在失败前最远一步
-    if (stage.includes('pay') || stage.includes('checkout') || stage.includes('subscription')) idx = 2
-    else if (stage.includes('card') || stage.includes('fund')) idx = 1
-    else idx = 0
-  } else if (stage.includes('subscription') || stage.includes('paid') || stage.includes('invoice')) idx = 2
-  else if (stage.includes('dispatch') || stage.includes('payment') || stage.includes('checkout') || stage.includes('spend')) idx = 2
-  else if (stage.includes('card') || stage.includes('fund') || stage.includes('await')) idx = 1
-  else if (timeline.value.some((e) => ['payment', 'subscription', 'checkout'].includes(e.step))) idx = 2
-  else if (timeline.value.length) idx = 1
-  return keys.map((k, i) => ({ ...k, active: i <= idx }))
+/* ── 兑换结果页展示层：只做派生，不改兑换/轮询逻辑 ─────────────────── */
+type ResultTone = 'good' | 'warn' | 'bad' | 'info'
+type StageState = 'done' | 'active' | 'warn' | 'bad' | 'idle'
+
+const RESULT_STAGE_DEFS: { key: string; label: string; steps: string[] }[] = [
+  { key: 'verify', label: '凭证校验', steps: ['queued', 'credential_check'] },
+  { key: 'card', label: '开卡 · 绑卡', steps: ['checkout'] },
+  { key: 'pay', label: '支付扣款', steps: ['payment', 'invoice'] },
+  { key: 'reconcile', label: '对账确认', steps: ['reconcile'] },
+  { key: 'activate', label: '订阅生效', steps: ['subscription', 'completed', 'renewal'] },
+]
+
+function pad2(n: number) {
+  return String(n).padStart(2, '0')
+}
+
+function fmtShortTime(v: any) {
+  if (!v) return ''
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return String(v)
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+}
+
+function fmtDotDate(v: any) {
+  if (!v) return '—'
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return '—'
+  return `${d.getFullYear()}.${pad2(d.getMonth() + 1)}.${pad2(d.getDate())}`
+}
+
+function fmtDateSeconds(v: any) {
+  if (!v) return '—'
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return String(v)
+  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+}
+
+function firstValue(...values: any[]) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && String(value).trim() !== '') return String(value)
+  }
+  return ''
+}
+
+function fmtDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return ''
+  if (seconds < 60) return `${Math.round(seconds)} 秒`
+  const minutes = Math.floor(seconds / 60)
+  const rest = Math.round(seconds % 60)
+  return `${minutes} 分 ${rest} 秒`
+}
+
+function stageIndexFromStage(stage: string) {
+  const value = String(stage || '').toLowerCase()
+  if (value.includes('subscription') || value.includes('activate') || value.includes('paid') || value.includes('invoice')) return 4
+  if (value.includes('reconcile') || value.includes('complete')) return 3
+  if (value.includes('payment') || value.includes('checkout') || value.includes('spend') || value.includes('dispatch')) return 2
+  if (value.includes('card') || value.includes('fund') || value.includes('await')) return 1
+  return 0
+}
+
+function stageDuration(events: any[]) {
+  if (events.length < 2) return ''
+  const start = Date.parse(events[0]?.created_at || '')
+  const end = Date.parse(events[events.length - 1]?.created_at || '')
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return ''
+  const seconds = (end - start) / 1000
+  if (seconds < 1) return '<1s'
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
+}
+
+function stageStateLabel(state: StageState) {
+  return {
+    done: '成功',
+    active: '处理中',
+    warn: '审核中',
+    bad: '失败',
+    idle: '等待',
+  }[state]
+}
+
+function stageStateMessage(state: StageState) {
+  return {
+    done: '已完成',
+    active: '正在处理，等待卡台返回结果…',
+    warn: '等待审核结果，请勿重复提交。',
+    bad: '该阶段未通过，请查看下方原因。',
+    idle: '',
+  }[state]
+}
+
+function categoryLabel(value: any) {
+  const category = String(value || '').toLowerCase()
+  if (['success', 'completed', 'done'].includes(category)) return '成功'
+  if (['failed', 'error'].includes(category)) return '失败'
+  if (category === 'review') return '审核中'
+  if (category === 'warning') return '需关注'
+  if (category === 'running') return '处理中'
+  if (category === 'queued') return '排队中'
+  if (category === 'pending') return '等待中'
+  return value || '处理中'
+}
+
+function categoryChipClass(value: any) {
+  const category = String(value || '').toLowerCase()
+  if (['success', 'completed', 'done'].includes(category)) return 'is-good'
+  if (['failed', 'error'].includes(category)) return 'is-bad'
+  if (['review', 'warning'].includes(category)) return 'is-warn'
+  if (['running', 'queued'].includes(category)) return 'is-info'
+  return 'is-muted'
+}
+
+const resultTone = computed<ResultTone>(() => {
+  const status = String(resultStatus.value || '').toLowerCase()
+  if (status === 'completed') return 'good'
+  if (['review', 'card_open_review', 'card_recharge_review'].includes(status)) return 'warn'
+  if (['declined', 'failed_precharge', 'cancelled', 'failed', 'error'].includes(status)) return 'bad'
+  return 'info'
 })
+
+const resultToneText = computed(() => ({
+  good: '已完成',
+  warn: '审核中',
+  bad: '未完成',
+  info: '处理中',
+}[resultTone.value]))
+
+const statusBadge = computed(() => {
+  const status = String(resultStatus.value || '').toLowerCase()
+  const labels: Record<string, string> = {
+    completed: 'COMPLETED',
+    review: 'REVIEW',
+    card_open_review: 'CARD REVIEW',
+    card_recharge_review: 'RECHARGE REVIEW',
+    pending: 'PENDING',
+    queued: 'QUEUED',
+    running: 'RUNNING',
+    declined: 'DECLINED',
+    cancelled: 'CANCELLED',
+    failed_precharge: 'FAILED PRECHARGE',
+    failed: 'FAILED',
+    error: 'ERROR',
+  }
+  return labels[status] || (status ? status.replace(/_/g, ' ').toUpperCase() : 'PENDING')
+})
+
+const resultOrder = computed<any>(() => {
+  const body = resultBody.value
+  return body?.order || body?.data?.order || {}
+})
+
+const resultPlanRaw = computed(() => {
+  const plan = firstValue(
+    resultOrder.value.plan,
+    resultOrder.value.plan_type,
+    resultBody.value?.plan,
+    resultBody.value?.data?.plan,
+    targetPlan.value,
+  )
+  return plan.toLowerCase()
+})
+
+const resultPlanText = computed(() => {
+  const plan = resultPlanRaw.value
+  if (!plan) return '—'
+  const label = planLabel(plan)
+  const product = String(resultOrder.value.product || previewInfo.value?.product || '').toLowerCase()
+  const isChatGPT = product === 'gpt'
+    || (!product && (plan.includes('plus') || plan.includes('pro') || plan.includes('team') || plan.includes('chatgpt')))
+  if (isChatGPT && !label.startsWith('ChatGPT')) return `ChatGPT ${label}`
+  return label
+})
+
+const resultOrderId = computed(() => firstValue(
+  resultOrder.value.id,
+  resultOrder.value.order_id,
+  resultOrder.value.number,
+  resultBody.value?.order_id,
+  resultBody.value?.data?.order_id,
+))
+
+const resultLastAt = computed(() => {
+  const lastEvent = timeline.value[timeline.value.length - 1]
+  return firstValue(
+    lastEvent?.created_at,
+    resultOrder.value.completed_at,
+    resultOrder.value.updated_at,
+    resultBody.value?.completed_at,
+  )
+})
+
+const resultCompletedText = computed(() => (resultLastAt.value ? fmtDateSeconds(resultLastAt.value) : '—'))
+const receiptDate = computed(() => fmtDotDate(resultLastAt.value))
+const resultTimeLabel = computed(() => (String(resultStatus.value || '').toLowerCase() === 'completed' ? '完成时间' : '最近更新'))
+
+const paymentEvent = computed(() => {
+  const payments = timeline.value.filter((event) => String(event?.step || '').toLowerCase() === 'payment')
+  return payments.filter((event) => ['success', 'completed', 'done'].includes(String(event?.category || '').toLowerCase())).pop()
+    || payments[payments.length - 1]
+    || null
+})
+
+const paymentTimeText = computed(() => {
+  if (isCardAttach.value) return '无需扣款'
+  const category = String(paymentEvent.value?.category || '').toLowerCase()
+  if (paymentEvent.value?.created_at) {
+    if (['success', 'completed', 'done'].includes(category)) return `${fmtShortTime(paymentEvent.value.created_at)} · Stripe`
+    if (['failed', 'error'].includes(category)) return '支付失败'
+    return '待确认'
+  }
+  if (resultTone.value === 'good' && resultLastAt.value) return `${fmtShortTime(resultLastAt.value)} · Stripe`
+  if (resultTone.value === 'good') return '已完成'
+  if (resultTone.value === 'bad') return '未扣款'
+  return '待扣款'
+})
+
+const paymentText = computed(() => {
+  if (isCardAttach.value) return '绑卡 · 未扣款'
+  const category = String(paymentEvent.value?.category || '').toLowerCase()
+  if (['success', 'completed', 'done'].includes(category)) return 'Stripe · 已扣款'
+  if (resultTone.value === 'bad') return paymentEvent.value ? 'Stripe · 支付失败' : 'Stripe · 未扣款'
+  if (category === 'review') return 'Stripe · 审核中'
+  if (paymentEvent.value) return 'Stripe · 处理中'
+  return 'Stripe · 待扣款'
+})
+
+const cardText = computed(() => (resultCardLastFour.value ? `•••• ${resultCardLastFour.value}` : '开卡后显示尾号'))
+
+const isCardAttach = computed(() => {
+  const flow = String(previewInfo.value?.plan_flow || '').toLowerCase()
+  if (flow) return flow === 'card_attach'
+  return /renew/.test(resultPlanRaw.value)
+})
+
+const resultTitle = computed(() => ({
+  good: '兑换完成',
+  warn: '兑换审核中',
+  bad: '兑换未完成',
+  info: resultStatus.value ? '兑换处理中' : '兑换进度',
+}[resultTone.value]))
+
+const resultSubtitle = computed(() => {
+  if (resultMessage.value) return resultMessage.value
+  if (resultTone.value === 'good') {
+    return isCardAttach.value
+      ? `${resultPlanText.value === '—' ? '本次兑换' : resultPlanText.value} 支付卡绑定完成，本次未扣款。`
+      : `${resultPlanText.value === '—' ? '本次兑换' : resultPlanText.value} 已开通，Stripe 扣款已确认。`
+  }
+  if (resultTone.value === 'warn') return '订单已提交，正在审核。请勿重复提交，结果会自动刷新。'
+  if (resultTone.value === 'bad') return '本次兑换未完成，请根据下方原因处理。'
+  return resultStatus.value ? '正在处理，结果会自动刷新；请保持页面打开。' : '正在获取最新状态…'
+})
+
+const resultHeadTitle = computed(() => {
+  if (resultTone.value === 'good') {
+    const plan = resultPlanText.value === '—' ? '本次兑换' : resultPlanText.value
+    return isCardAttach.value ? `${plan} 已完成` : `${plan} 已开通`
+  }
+  if (resultTone.value === 'warn') return '订单正在审核'
+  if (resultTone.value === 'bad') return '本次兑换未完成'
+  return '订单处理中'
+})
+
+const resultHeadVerb = computed(() => (resultTone.value === 'good' ? '兑换于' : '更新于'))
+
+const resultDurationSeconds = computed(() => {
+  if (!isTerminal(resultStatus.value)) return 0
+  const times = timeline.value
+    .map((event) => Date.parse(event?.created_at || ''))
+    .filter((time) => Number.isFinite(time))
+  if (!times.length) return 0
+  const start = Math.min(...times)
+  const end = Math.max(...times)
+  return Math.max(0, Math.round((end - start) / 1000))
+})
+
+const resultStages = computed(() => {
+  const groups = RESULT_STAGE_DEFS.map((def) => ({ key: def.key, label: def.label, events: [] as any[] }))
+  for (const event of timeline.value) {
+    const step = String(event?.step || '').toLowerCase()
+    const index = RESULT_STAGE_DEFS.findIndex((def) => def.steps.includes(step))
+    if (index >= 0) groups[index].events.push(event)
+  }
+
+  const status = String(resultStatus.value || '').toLowerCase()
+  const completed = status === 'completed'
+  const failed = ['declined', 'failed_precharge', 'cancelled', 'failed', 'error'].includes(status)
+  const warning = ['review', 'card_open_review', 'card_recharge_review'].includes(status)
+
+  let activeIndex = -1
+  if (completed) {
+    activeIndex = groups.length - 1
+  } else if (timeline.value.length) {
+    groups.forEach((group, index) => {
+      if (group.events.length) activeIndex = index
+    })
+  } else if (status) {
+    activeIndex = stageIndexFromStage(resultStage.value)
+  }
+
+  return groups.map((group, index) => {
+    let state: StageState
+    if (completed) state = 'done'
+    else if (index < activeIndex) state = 'done'
+    else if (index > activeIndex) state = 'idle'
+    else if (failed) state = 'bad'
+    else if (warning) state = 'warn'
+    else state = 'active'
+
+    if (!completed && index === activeIndex && group.events.some((event) => ['failed', 'error'].includes(String(event?.category || '').toLowerCase()))) {
+      state = 'bad'
+    }
+
+    const timeSource = group.events[group.events.length - 1]
+
+    return {
+      key: group.key,
+      label: group.label,
+      state,
+      events: group.events,
+      count: group.events.length,
+      time: timeSource ? fmtShortTime(timeSource.created_at) : '',
+    }
+  })
+})
+
+const stageDoneCount = computed(() => resultStages.value.filter((stage) => stage.state === 'done').length)
+
+const resultMetaText = computed(() => {
+  const parts: string[] = []
+  if (resultDurationSeconds.value > 0) parts.push(`耗时 ${fmtDuration(resultDurationSeconds.value)}`)
+  parts.push(resultTone.value === 'good' ? `${stageDoneCount.value}/5 阶段` : `${stageDoneCount.value}/5 已完成`)
+  if (polling.value) parts.push('实时刷新中')
+  return parts.join(' · ')
+})
+
+const resultRows = computed(() => resultStages.value
+  .filter((stage) => stage.count > 0 || ['active', 'warn', 'bad'].includes(stage.state))
+  .map((stage) => {
+    const lastEvent = stage.events[stage.events.length - 1]
+    const messageEvent = [...stage.events].reverse().find((event) => event?.public_message) || lastEvent
+    return {
+      key: stage.key,
+      label: stage.label,
+      state: stage.state,
+      time: stage.time,
+      chip: stageStateLabel(stage.state),
+      message: messageEvent?.public_message || messageEvent?.to_status || stageStateMessage(stage.state),
+      duration: stageDuration(stage.events),
+    }
+  }))
+
+const receiptStatusText = computed(() => {
+  if (resultTone.value === 'good') return isCardAttach.value ? '已完成' : '已开通'
+  return ({
+    good: '已开通',
+    warn: '审核中',
+    bad: '未完成',
+    info: '处理中',
+  }[resultTone.value])
+})
+
+const resultFootText = computed(() => {
+  if (resultTone.value === 'good') return '兑换已完成 · 结果已保存至本设备'
+  if (resultTone.value === 'bad') return '兑换已结束 · 可凭订单号联系客服'
+  if (resultTone.value === 'warn') return '审核中 · 每 3 秒自动刷新'
+  return '处理中 · 每 3 秒自动刷新'
+})
+
+async function copyText(value: string, okMessage: string) {
+  if (!value) return
+  const ok = await copyToClipboard(value)
+  dialog.toast(ok ? okMessage : '复制失败，请手动选择文本', ok ? 'ok' : 'warn')
+}
+
+function copyReceipt() {
+  const lines = [
+    'LLDCard 兑换凭证',
+    `状态：${receiptStatusText.value}`,
+    `产品：${resultPlanText.value}`,
+    `账号：${displayResultEmail.value || '—'}`,
+    `卡片：${cardText.value}`,
+    `订单号：${resultOrderId.value || '—'}`,
+    `完成时间：${resultCompletedText.value}`,
+  ]
+  void copyText(lines.join('\n'), '凭证信息已复制')
+}
 
 function extractCardLastFour(order: any): string {
   const last = String(order?.card_last_four || '').trim()
@@ -1108,6 +1586,7 @@ function resetAll() {
   resultCardLastFour.value = ''
   timeline.value = []
   polling.value = false
+  showAllEvents.value = false
   sessionFileName.value = ''
 }
 </script>
@@ -1173,5 +1652,797 @@ function resetAll() {
 }
 @media (max-width: 640px) {
   .account-facts { grid-template-columns: 1fr; }
+}
+
+/* ── 兑换结果页（仅 step 4，不影响前三步）──────────────────────────── */
+.result-wrap {
+  max-width: 72rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 0 24px;
+}
+.result-subnav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 8px 0 18px;
+  border-bottom: 1px solid var(--brd);
+}
+.result-crumb {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.result-crumb b { color: var(--ink); font-weight: 600; }
+.result-crumb i { font-style: normal; margin: 0 8px; color: var(--ink-3); opacity: 0.65; }
+
+.result-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 36px;
+  padding: 34px 0 30px;
+}
+.result-hero-copy { min-width: 0; }
+.result-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+.result-eyebrow::before {
+  content: '';
+  width: 18px;
+  height: 1px;
+  background: var(--ink-3);
+}
+.result-eyebrow em { font-style: normal; color: var(--ink); }
+.result-hero h1 {
+  margin: 13px 0 0;
+  font-family: var(--title-font, var(--font-display));
+  font-size: clamp(2.2rem, 4.6vw, 3.375rem);
+  font-weight: 800;
+  font-style: var(--title-style, normal);
+  letter-spacing: var(--title-track, -0.035em);
+  line-height: 1.04;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.result-hero p {
+  margin: 14px 0 0;
+  max-width: 34rem;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+.result-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+.result-action {
+  height: 42px;
+  padding: 0 20px;
+  border-radius: var(--btn-radius, 999px);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.result-action svg { width: 13px; height: 13px; }
+
+.result-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 22px;
+  align-items: start;
+  padding-bottom: 26px;
+}
+.result-card {
+  padding: 28px 30px 24px;
+  min-width: 0;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--surface) 90%, transparent) inset, 0 26px 50px -46px rgba(0, 0, 0, 0.35);
+}
+.result-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.result-tone {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 50px;
+  height: 50px;
+  border-radius: 15px;
+  border: 1px solid transparent;
+}
+.result-tone svg { width: 22px; height: 22px; }
+.result-tone.is-good { background: var(--good-soft); color: var(--good); border-color: color-mix(in srgb, var(--good) 28%, transparent); }
+.result-tone.is-warn { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 28%, transparent); }
+.result-tone.is-bad { background: var(--err-soft); color: var(--err); border-color: color-mix(in srgb, var(--err) 28%, transparent); }
+.result-tone.is-info { background: var(--primary-soft); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 24%, transparent); }
+.result-head-copy { min-width: 0; }
+.result-head-copy h2 {
+  margin: 2px 0 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.result-head-copy p {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.result-email {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.result-head-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+  margin-left: auto;
+  flex: none;
+}
+.result-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+.result-pill i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.result-pill.is-good { color: var(--good); background: var(--good-soft); border-color: color-mix(in srgb, var(--good) 28%, transparent); }
+.result-pill.is-warn { color: var(--warn); background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 28%, transparent); }
+.result-pill.is-bad { color: var(--err); background: var(--err-soft); border-color: color-mix(in srgb, var(--err) 28%, transparent); }
+.result-pill.is-info { color: var(--primary); background: var(--primary-soft); border-color: color-mix(in srgb, var(--primary) 24%, transparent); }
+.result-head-meta small {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.result-alert { margin-top: 18px; }
+
+.result-rail {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 26px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.result-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  text-align: center;
+}
+.result-stage:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  right: calc(50% + 17px);
+  width: calc(100% - 34px);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--brd-2);
+}
+.result-stage.is-done::before,
+.result-stage.is-active::before,
+.result-stage.is-warn::before,
+.result-stage.is-bad::before { background: var(--ink); }
+.result-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.result-dot svg { width: 12px; height: 12px; }
+.result-stage.is-warn .result-dot { background: var(--warn); color: #fff; }
+.result-stage.is-bad .result-dot { background: var(--err); color: #fff; }
+.result-stage.is-idle .result-dot {
+  background: var(--surface);
+  color: var(--ink-3);
+  border: 1px solid var(--brd-2);
+}
+.result-stage.is-done:last-child .result-dot { background: var(--good); }
+.result-stage b {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-stage.is-idle b { color: var(--ink-3); font-weight: 500; }
+.result-stage time {
+  min-height: 12px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.result-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bg);
+  animation: result-pulse 1.8s ease-out infinite;
+}
+@keyframes result-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--bg) 45%, transparent); }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.result-section {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--brd);
+}
+.result-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.result-section-head h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.result-section-head > span {
+  color: var(--ink-3);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.result-link {
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid var(--brd-2);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.result-link:hover { color: var(--ink); border-color: var(--ink-3); }
+.result-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 19px 26px;
+  margin: 18px 0 0;
+}
+.result-fact { min-width: 0; }
+.result-fact dt {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.result-fact dd {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 6px 0 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-fact dd.is-mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.result-copy {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-left: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.result-copy svg { width: 12px; height: 12px; }
+.result-copy:hover { color: var(--ink); }
+
+.result-events {
+  position: relative;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.result-events::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 16px;
+  left: 72px;
+  width: 1px;
+  background: var(--brd);
+}
+.result-event {
+  display: grid;
+  grid-template-columns: 58px 28px minmax(0, 1fr);
+  padding-bottom: 17px;
+}
+.result-event:last-child { padding-bottom: 0; }
+.result-event time {
+  padding-top: 1px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.result-node {
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  margin: 4px auto 0;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 4px var(--surface);
+}
+.result-event.is-active .result-node { background: var(--primary); }
+.result-event.is-warn .result-node { background: var(--warn); }
+.result-event.is-bad .result-node { background: var(--err); }
+.result-event.is-idle .result-node { background: var(--brd-2); }
+.result-event.is-done:last-child .result-node { background: var(--good); }
+.result-event-body { min-width: 0; }
+.result-event-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.result-event-top b {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+.result-chip {
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.result-chip.is-good { color: var(--good); background: var(--good-soft); border-color: color-mix(in srgb, var(--good) 24%, transparent); }
+.result-chip.is-warn { color: var(--warn); background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 24%, transparent); }
+.result-chip.is-bad { color: var(--err); background: var(--err-soft); border-color: color-mix(in srgb, var(--err) 24%, transparent); }
+.result-chip.is-info { color: var(--primary); background: var(--primary-soft); border-color: color-mix(in srgb, var(--primary) 20%, transparent); }
+.result-chip.is-muted { color: var(--ink-3); background: var(--surface-2); border-color: var(--brd); }
+.result-dur {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.result-event p {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.result-empty {
+  margin: 16px 0 0;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.result-raw {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  list-style: none;
+}
+.result-raw li {
+  display: grid;
+  grid-template-columns: 64px 76px 54px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid var(--brd);
+  color: var(--ink-2);
+  font-size: 11px;
+}
+.result-raw li:first-child { border-top: 0; }
+.result-raw-time { font-family: var(--font-mono); color: var(--ink-3); }
+.result-raw li b { font-size: 11.5px; color: var(--ink); }
+.result-raw .result-chip { justify-self: start; padding: 2px 6px; font-size: 9px; }
+.result-raw-msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.result-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--brd);
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.result-foot-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.result-foot-live i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--good);
+  animation: result-pulse 1.8s ease-out infinite;
+}
+.result-advanced {
+  margin-top: 18px;
+  padding-top: 13px;
+  border-top: 1px solid var(--brd);
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.result-advanced-summary { cursor: pointer; user-select: none; }
+.result-advanced pre {
+  max-height: 220px;
+  margin: 10px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.result-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.result-receipt {
+  position: relative;
+  overflow: hidden;
+  padding: 24px 24px 20px;
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(360px 200px at 18% -22%, color-mix(in srgb, var(--bg) 14%, transparent), transparent 62%),
+    radial-gradient(300px 220px at 108% 112%, color-mix(in srgb, var(--good) 16%, transparent), transparent 64%),
+    var(--ink);
+  color: var(--bg);
+  box-shadow: 0 30px 60px -40px rgba(0, 0, 0, 0.65);
+}
+.receipt-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: color-mix(in srgb, var(--bg) 52%, transparent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+}
+.receipt-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+.receipt-ring {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--bg) 20%, transparent);
+  background: color-mix(in srgb, var(--bg) 8%, transparent);
+}
+.receipt-ring svg { width: 15px; height: 15px; }
+.receipt-ring.is-good { color: #fff; background: var(--good); border-color: transparent; }
+.receipt-ring.is-warn { color: #fff; background: var(--warn); border-color: transparent; }
+.receipt-ring.is-bad { color: #fff; background: var(--err); border-color: transparent; }
+.receipt-ring.is-info { color: var(--primary-on, #fff); background: var(--primary); border-color: transparent; }
+.receipt-status b { display: block; font-size: 15px; font-weight: 700; letter-spacing: 0.01em; }
+.receipt-status span {
+  display: block;
+  margin-top: 3px;
+  color: color-mix(in srgb, var(--bg) 46%, transparent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+.receipt-product {
+  margin-top: 18px;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.receipt-sub {
+  margin-top: 6px;
+  color: color-mix(in srgb, var(--bg) 52%, transparent);
+  font-size: 11.5px;
+}
+.receipt-perf {
+  position: relative;
+  height: 1px;
+  margin: 22px -24px 20px;
+  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--bg) 22%, transparent) 0 5px, transparent 5px 11px);
+}
+.receipt-perf::before,
+.receipt-perf::after {
+  content: '';
+  position: absolute;
+  top: -10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg);
+}
+.receipt-perf::before { left: -10px; }
+.receipt-perf::after { right: -10px; }
+.receipt-rows { display: flex; flex-direction: column; gap: 13px; margin: 0; }
+.receipt-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+.receipt-row dt {
+  color: color-mix(in srgb, var(--bg) 46%, transparent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.receipt-row dd {
+  max-width: 72%;
+  margin: 0;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--bg) 90%, transparent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.receipt-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 39px;
+  margin-top: 22px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.receipt-btn:hover { transform: translateY(-1px); opacity: 0.92; }
+.receipt-btn svg { width: 13px; height: 13px; }
+.receipt-link {
+  display: block;
+  width: max-content;
+  margin: 13px auto 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--bg) 24%, transparent);
+  color: color-mix(in srgb, var(--bg) 62%, transparent);
+  font-size: 11px;
+  text-decoration: none;
+}
+.receipt-link:hover { color: var(--bg); }
+.receipt-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--bg) 10%, transparent);
+  color: color-mix(in srgb, var(--bg) 42%, transparent);
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+}
+.receipt-foot svg { width: 10px; height: 10px; flex: none; }
+
+.result-next {
+  padding: 20px 22px 8px;
+  border: 1px solid var(--brd);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.result-next h3 {
+  margin: 0 0 2px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.result-next ol { margin: 0; padding: 0; list-style: none; }
+.result-next li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 0;
+  border-top: 1px solid var(--brd);
+}
+.result-next li:first-child { border-top: 0; }
+.result-next-num {
+  padding-top: 2px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+}
+.result-next b { display: block; color: var(--ink); font-size: 12.5px; font-weight: 700; }
+.result-next p { margin: 3px 0 0; color: var(--ink-3); font-size: 11px; line-height: 1.55; }
+.result-mini {
+  flex: none;
+  margin-left: auto;
+  padding: 4px 9px;
+  border: 1px solid var(--brd-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.result-mini:hover { color: var(--ink); border-color: var(--ink-3); }
+.result-device-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 4px;
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.65;
+}
+.result-device-note svg { width: 12px; height: 12px; margin-top: 2px; flex: none; }
+
+@media (max-width: 900px) {
+  .result-grid { grid-template-columns: minmax(0, 1fr); }
+  .result-aside { order: 2; }
+  .result-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .result-events::before { left: 62px; }
+  .result-event { grid-template-columns: 48px 26px minmax(0, 1fr); }
+  .result-head { flex-wrap: wrap; }
+  .result-head-meta {
+    margin-left: 0;
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 900px) {
+  .result-aside { max-width: 460px; }
+}
+
+@media (max-width: 640px) {
+  .result-wrap { padding: 0 16px; }
+  .result-subnav { padding: 4px 0 14px; }
+  .result-crumb { display: none; }
+  .result-hero {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 18px;
+    padding: 22px 0;
+  }
+  .result-hero h1 { margin-top: 10px; font-size: 38px; letter-spacing: -0.04em; }
+  .result-hero p { margin-top: 10px; font-size: 12.5px; line-height: 1.7; }
+  .result-eyebrow { font-size: 9.5px; }
+  .result-actions { gap: 8px; }
+  .result-action { flex: 1; height: 40px; padding: 0 14px; font-size: 12.5px; }
+  .result-card { padding: 18px 16px 16px; border-radius: 18px; }
+  .result-tone { width: 42px; height: 42px; border-radius: 12px; }
+  .result-tone svg { width: 18px; height: 18px; }
+  .result-head { gap: 11px; }
+  .result-head-copy h2 { margin-top: 3px; font-size: 18px; }
+  .result-head-copy p { margin-top: 5px; font-size: 11px; line-height: 1.55; }
+  .result-head-meta { margin-top: 2px; }
+  .result-head-meta small { font-size: 9.5px; }
+  .result-pill { height: 22px; font-size: 9px; }
+  .result-rail { margin-top: 18px; }
+  .result-stage { gap: 7px; }
+  .result-stage:not(:first-child)::before {
+    top: 10px;
+    right: calc(50% + 14px);
+    width: calc(100% - 28px);
+    height: 1.5px;
+  }
+  .result-dot { width: 22px; height: 22px; font-size: 9px; }
+  .result-dot svg { width: 10px; height: 10px; }
+  .result-stage b { font-size: 10px; }
+  .result-stage time { font-size: 8.5px; }
+  .result-section { margin-top: 20px; padding-top: 16px; }
+  .result-section-head h3 { font-size: 12px; }
+  .result-section-head > span { font-size: 10px; }
+  .result-link { font-size: 10.5px; }
+  .result-facts { gap: 15px 14px; margin-top: 15px; }
+  .result-fact dt { font-size: 8.5px; letter-spacing: 0.1em; }
+  .result-fact dd { margin-top: 5px; font-size: 12px; }
+  .result-fact dd.is-mono { font-size: 10.5px; }
+  .result-events { margin-top: 15px; }
+  .result-events::before { left: 59px; top: 10px; bottom: 12px; }
+  .result-event { grid-template-columns: 48px 22px minmax(0, 1fr); padding-bottom: 15px; }
+  .result-event time { font-size: 9.5px; letter-spacing: -0.03em; }
+  .result-node { width: 8px; height: 8px; margin-top: 4px; }
+  .result-event-top { gap: 6px; }
+  .result-event-top b { font-size: 12px; }
+  .result-chip { padding: 3px 6px; font-size: 9px; }
+  .result-dur { font-size: 9px; }
+  .result-event p { font-size: 11.5px; line-height: 1.55; }
+  .result-raw { padding: 10px 12px; }
+  .result-raw li { grid-template-columns: 56px 64px 48px minmax(0, 1fr); gap: 6px; font-size: 10px; }
+  .result-foot { flex-direction: column; align-items: flex-start; gap: 7px; margin-top: 18px; padding-top: 13px; font-size: 10px; }
+  .result-receipt { padding: 22px 20px 18px; border-radius: 18px; }
+  .receipt-perf { margin-left: -20px; margin-right: -20px; }
+  .receipt-product { font-size: 26px; }
+  .receipt-status { margin-top: 18px; }
+  .receipt-row dd { max-width: 66%; }
+  .result-next { padding: 18px 18px 6px; border-radius: 18px; }
+  .result-next b { font-size: 12px; }
+  .result-next p { font-size: 10.5px; }
+  .result-device-note { font-size: 10px; }
 }
 </style>

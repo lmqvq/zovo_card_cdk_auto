@@ -1,6 +1,6 @@
 <template>
-  <div class="redeem-tabs card !p-1.5 mb-6">
-    <nav class="grid grid-cols-2 sm:grid-cols-4 gap-1">
+  <div class="redeem-tabs" :class="compact ? 'redeem-tabs--compact' : 'card !p-1.5 mb-6'">
+    <nav :class="compact ? 'redeem-tabs-nav' : 'grid grid-cols-2 sm:grid-cols-4 gap-1'">
       <router-link
         v-for="tab in tabs"
         :key="tab.to"
@@ -18,6 +18,8 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+
+withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 
 const route = useRoute()
 const { t } = useI18n({ useScope: 'global' })
