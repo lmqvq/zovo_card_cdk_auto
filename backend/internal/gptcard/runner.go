@@ -462,6 +462,15 @@ func loadSession(job *db.CardDeleteJob) (*Session, error) {
 	return ParseSession(raw)
 }
 
+// SessionMaterial 返回某张卡密绑定的会话材料。
+// [CD-3] 后台排障/运维用：只读，复用 sessionByCDK，不做任何外部请求。
+func SessionMaterial(cdkID int64) (string, error) {
+	if cdkID <= 0 {
+		return "", fmt.Errorf("cdk_id required")
+	}
+	return sessionByCDK(cdkID)
+}
+
 func sessionByCDK(cdkID int64) (string, error) {
 	code, ok := db.LookupCardplatformCDKCode(cdkID, "")
 	if !ok || strings.TrimSpace(code) == "" {

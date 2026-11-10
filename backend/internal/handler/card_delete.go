@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -94,6 +96,63 @@ func AdminCheckCardDeleteSession(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"state": state})
+}
+
+// AdminCardDeleteMaterial GET /api/v1/admin/card-delete/material?cdk_id=&reveal=
+// [CD-3] 取出该卡密绑定的会话材料：默认只返回摘要，reveal=1 才返回原文并写审计。
+func AdminCardDeleteMaterial(c *gin.Context) {
+	id, err := strconv.ParseInt(strings.TrimSpace(c.Query("cdk_id")), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cdk_id required"})
+		return
+	}
+	raw, err := gptcard.SessionMaterial(id)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "该卡密未绑定 Session"})
+		return
+	}
+	email, plan, accountID := sessionMaterialView(raw)
+	resp := gin.H{
+		"has_material": true,
+		"bytes":        len(raw),
+		"email":        maskSessionEmail(email),
+		"plan":         plan,
+		"account_id":   accountID,
+	}
+	if c.Query("reveal") == "1" {
+		u, _ := c.Get("username")
+		username, _ := u.(string)
+		db.WriteAudit(username, "card_delete_material",
+			fmt.Sprintf("cdk_id=%d bytes=%d", id, len(raw)), c.ClientIP())
+		resp["material"] = raw
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, resp)
+}
+
+// sessionMaterialView 从 session JSON 中抽展示字段（不校验、不解密）。
+func sessionMaterialView(raw string) (email, plan, accountID string) {
+	var m map[string]any
+	if json.Unmarshal([]byte(raw), &m) != nil {
+		return "", "", ""
+	}
+	if u, ok := m["user"].(map[string]any); ok {
+		email, _ = u["email"].(string)
+	}
+	if a, ok := m["account"].(map[string]any); ok {
+		plan, _ = a["planType"].(string)
+		accountID, _ = a["id"].(string)
+	}
+	return
+}
+
+// maskSessionEmail 脱敏：ab***@domain
+func maskSessionEmail(e string) string {
+	i := strings.IndexByte(e, '@')
+	if i <= 2 {
+		return e
+	}
+	return e[:2] + "***" + e[i:]
 }
 
 // AdminGetCardDeleteSettings GET /api/v1/admin/card-delete/settings

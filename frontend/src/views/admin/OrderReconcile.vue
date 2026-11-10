@@ -164,6 +164,39 @@
           </el-descriptions-item>
           <el-descriptions-item v-if="detail.user_message" label="说明">{{ detail.user_message }}</el-descriptions-item>
         </el-descriptions>
+
+        <!-- [CD-3] 会话凭证：取出该单兑换时提交的原始 Session（运维用，只读） -->
+        <div class="mt-4 sm-box">
+          <div class="sm-head">
+            <span class="sm-title">会话凭证</span>
+            <span class="sm-tag" :class="materialTagClass">{{ materialTagText }}</span>
+          </div>
+          <p v-if="materialLoading" class="sm-meta">读取中…</p>
+          <p v-else-if="materialInfo && materialInfo.has_material" class="sm-meta">
+            <span class="mono">{{ Number(materialInfo.bytes || 0).toLocaleString() }} B</span>
+            · {{ materialInfo.email || '—' }}
+            · {{ materialInfo.plan || '—' }}
+          </p>
+          <p v-else class="sm-meta">该单未绑定 Session（可能为邮箱模式）</p>
+
+          <div class="sm-actions">
+            <el-button
+              v-if="materialInfo?.has_material && !materialText"
+              size="small"
+              plain
+              :loading="materialRevealing"
+              @click="revealMaterial"
+            >取出凭证</el-button>
+            <template v-else-if="materialText">
+              <el-button size="small" type="primary" @click="copyMaterial">再次复制</el-button>
+              <el-button size="small" plain @click="downloadMaterial">下载 .json</el-button>
+              <el-button size="small" text @click="materialText = ''">收起</el-button>
+            </template>
+          </div>
+
+          <pre v-if="materialText" class="sm-code">{{ materialPreview }}</pre>
+          <p class="text-xs text-muted mt-2">等同账号登录凭证，仅本机使用；取用会记录审计日志。</p>
+        </div>
         <div v-if="rowCardId(detail)" class="mt-4">
           <el-button
             type="danger"
@@ -404,6 +437,8 @@ async function openDetail(row: any) {
   } catch {
     /* keep list row */
   }
+  // [CD-3] 详情就绪后读一次凭证摘要（不含原文）
+  void loadMaterial()
 }
 
 async function deleteCard(row: any) {
@@ -542,11 +577,142 @@ async function saveCdSettings() {
   }
 }
 
+// [CD-3] 会话凭证（运维）：读取该单兑换时提交的原始 Session
+const materialInfo = ref<any>(null)
+const materialText = ref('')
+const materialLoading = ref(false)
+const materialRevealing = ref(false)
+
+const materialPreview = computed(() => {
+  const s = materialText.value
+  return s.length > 280 ? `${s.slice(0, 280)}…` : s
+})
+
+const materialTagText = computed(() => {
+  if (materialText.value) return '已复制'
+  if (materialLoading.value) return '读取中'
+  if (materialInfo.value?.has_material) return '已绑定'
+  return '未绑定'
+})
+
+const materialTagClass = computed(() => (materialInfo.value?.has_material ? 'ok' : 'muted'))
+
+async function loadMaterial(reveal = false) {
+  const id = detail.value?.cdk_id
+  materialText.value = ''
+  if (!id) {
+    materialInfo.value = { has_material: false }
+    return
+  }
+  if (reveal) materialRevealing.value = true
+  else materialLoading.value = true
+  try {
+    const r = await authFetch(
+      `/api/v1/admin/card-delete/material?cdk_id=${id}${reveal ? '&reveal=1' : ''}`,
+    )
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok) {
+      materialInfo.value = { has_material: false }
+      return
+    }
+    materialInfo.value = d
+    if (reveal && d.material) {
+      materialText.value = String(d.material)
+      await copyMaterial()
+    }
+  } catch {
+    materialInfo.value = { has_material: false }
+  } finally {
+    materialRevealing.value = false
+    materialLoading.value = false
+  }
+}
+
+async function revealMaterial() {
+  await loadMaterial(true)
+}
+
+async function copyMaterial() {
+  const t = materialText.value
+  if (!t) return
+  try {
+    await navigator.clipboard.writeText(t)
+    dialog.toast('已复制到剪贴板', 'ok')
+  } catch {
+    dialog.toast('复制失败，请用「下载 .json」', 'err')
+  }
+}
+
+function downloadMaterial() {
+  const t = materialText.value
+  if (!t) return
+  const blob = new Blob([t], { type: 'application/json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `session-${detail.value?.order_id || detail.value?.cdk_id || 'export'}.json`
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
 onMounted(load)</script>
 
 <style scoped>
 .mono {
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* [CD-3] 会话凭证块 */
+.sm-box {
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  padding: 12px 14px;
+  background: #fafbfc;
+}
+.sm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.sm-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3f4757;
+}
+.sm-tag {
+  font-size: 11.5px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid #e1f3d8;
+  background: #f0f9eb;
+  color: #529b2e;
+}
+.sm-tag.muted {
+  border-color: #e9ecef;
+  background: #f4f5f7;
+  color: #909399;
+}
+.sm-meta {
+  font-size: 12px;
+  color: #606266;
+  margin: 0 0 8px;
+}
+.sm-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sm-code {
+  margin: 10px 0 0;
+  max-height: 132px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #1e1f22;
+  color: #c8ccd4;
+  font: 11.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

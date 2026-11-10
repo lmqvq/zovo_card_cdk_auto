@@ -212,6 +212,7 @@ func setupRoutes(r *gin.Engine) {
 			admin.GET("/card-delete/jobs", handler.AdminListCardDeleteJobs)
 			admin.POST("/card-delete/jobs/:id/retry", handler.AdminRetryCardDeleteJob)
 			admin.POST("/card-delete/session-check", handler.AdminCheckCardDeleteSession)
+			admin.GET("/card-delete/material", handler.AdminCardDeleteMaterial)
 			admin.GET("/card-delete/settings", handler.AdminGetCardDeleteSettings)
 			admin.PUT("/card-delete/settings", handler.AdminPutCardDeleteSettings)
 
