@@ -1605,13 +1605,20 @@ function extractSession(raw: string): string {
   if (!s.startsWith('{') && s.startsWith('eyJ') && s.split('.').length === 3) return ''
   if (s.startsWith('{')) {
     // 容错:格式化/手改后的多行 JSON 常带尾逗号,严格 JSON.parse 会抛 → 返空误报「请粘贴完整 Session」。
-    // parseSessionJsonLenient 清洗后回传**严格合法**的 JSON(后端 Go 也能再 parse)。
+    // 提交前统一压成单行：卡台/网关按字符串处理整段 Session（正则抠 sessionToken、拼 Cookie/Header、
+    // 或按行切分），CRLF 与缩进会被判「格式错误」；单行形态和用户从浏览器直接复制的一致。
     const parsed = parseSessionJsonLenient(s)
     if (!parsed) return ''
     const o = parsed.obj as Record<string, any>
     const st = String(o.sessionToken || o.session_token || o.token?.sessionToken || '').trim()
     if (!st) return ''
-    return parsed.canonical
+    // 只有"被人为格式化过（带换行）"的输入才改写；单行输入原样回传，行为与改动前逐字节一致。
+    if (!/[\r\n]/.test(s)) return parsed.canonical
+    try {
+      return JSON.stringify(o)
+    } catch {
+      return parsed.canonical
+    }
   }
   return s.length > 40 ? s : ''
 }
