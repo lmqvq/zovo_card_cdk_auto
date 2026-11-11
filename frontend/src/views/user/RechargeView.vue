@@ -974,6 +974,7 @@ function fileReadErrorMessage(error: unknown): string {
     unsupported: t('recharge.fileErrors.unsupported'),
     empty: t('recharge.fileErrors.empty'),
     invalid_docx: t('recharge.fileErrors.invalidDocx'),
+    invalid_rtf: t('recharge.fileErrors.invalidRtf'),
     read_failed: t('recharge.fileErrors.read'),
   }
   return messages[error.code]

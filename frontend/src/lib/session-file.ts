@@ -5,15 +5,18 @@
  * put it into the existing Session input before the normal preflight flow.
  */
 
+import { extractSessionJsonFromText, rtfToText } from './rtf'
+
 export const MAX_SESSION_FILE_BYTES = 1024 * 1024
 export const SESSION_FILE_ACCEPT =
-  '.txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  '.txt,.docx,.rtf,text/plain,application/rtf,text/rtf,text/richtext,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
 export type SessionFileErrorCode =
   | 'too_large'
   | 'unsupported'
   | 'empty'
   | 'invalid_docx'
+  | 'invalid_rtf'
   | 'read_failed'
 
 export class SessionFileError extends Error {
@@ -26,9 +29,12 @@ export class SessionFileError extends Error {
   }
 }
 
-function fileKind(file: File): 'txt' | 'docx' | null {
+function fileKind(file: File): 'txt' | 'docx' | 'rtf' | null {
   const name = String(file.name || '').toLowerCase()
   const type = String(file.type || '').toLowerCase()
+  if (name.endsWith('.rtf') || type === 'application/rtf' || type === 'text/rtf' || type === 'text/richtext') {
+    return 'rtf'
+  }
   if (name.endsWith('.txt') || type === 'text/plain') return 'txt'
   if (
     name.endsWith('.docx') ||
@@ -98,7 +104,37 @@ async function readDocx(file: File): Promise<string> {
   }
 }
 
-/** Read a .txt or .docx Session file locally and return its trimmed text. */
+/** RTF 是 7-bit 文本 + `\'hh` 字节转义，按单字节读取即可（避免 UTF-8 解码把 `\'e4` 之类拆坏）。 */
+function decodeRtfBytes(bytes: Uint8Array): string {
+  let start = 0
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) start = 3
+  let out = ''
+  const chunkSize = 0x8000
+  for (let i = start; i < bytes.length; i += chunkSize) {
+    out += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  return out
+}
+
+/**
+ * Read an RTF document (Word / TextEdit / WPS 另存的 .rtf) and return the
+ * Session JSON inside it. RTF 里的 `\{` `\}`、`\u8203` 零宽空格、`\par`
+ * 拆行都由 rtf.ts 还原，调用方拿到的就是可直接提交的 JSON。
+ */
+async function readRtf(file: File): Promise<string> {
+  try {
+    const raw = decodeRtfBytes(new Uint8Array(await file.arrayBuffer()))
+    const text = rtfToText(raw)
+    const json = extractSessionJsonFromText(text)
+    if (!json) throw new SessionFileError('invalid_rtf')
+    return json
+  } catch (error) {
+    if (error instanceof SessionFileError) throw error
+    throw new SessionFileError('invalid_rtf')
+  }
+}
+
+/** Read a .txt / .docx / .rtf Session file locally and return its trimmed text. */
 export async function readSessionFile(file: File): Promise<string> {
   if (file.size > MAX_SESSION_FILE_BYTES) throw new SessionFileError('too_large')
 
@@ -106,7 +142,12 @@ export async function readSessionFile(file: File): Promise<string> {
   if (!kind) throw new SessionFileError('unsupported')
 
   try {
-    const text = kind === 'txt' ? await file.text() : await readDocx(file)
+    const text =
+      kind === 'txt'
+        ? await file.text()
+        : kind === 'rtf'
+          ? await readRtf(file)
+          : await readDocx(file)
     const trimmed = text.trim()
     if (!trimmed) throw new SessionFileError('empty')
     return trimmed
