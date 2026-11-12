@@ -25,6 +25,8 @@ const (
 	settingSetDefaultMethod = "card_delete_setdefault_method"
 	settingSetDefaultPath   = "card_delete_setdefault_path"
 	settingSetDefaultBody   = "card_delete_setdefault_body"
+	// settingSince 只处理该时间之后完成的订单（老订单 session 基本已过期，不做回补）
+	settingSince = "card_delete_since"
 )
 
 const (
@@ -199,11 +201,18 @@ func RunJob(jobID int64) {
 		}
 	}
 	if err != nil {
-		if apiErr, ok := err.(*APIError); ok && apiErr.Unauthorized() {
-			job.SessionState = "invalid"
-			job.SessionCheckedAt = nowString()
-			fail(db.CardDeleteFailed, "token_invalid", apiErr.Status)
-			return
+		if apiErr, ok := err.(*APIError); ok {
+			if apiErr.Cloudflare() {
+				// Cloudflare 拦截与凭据无关：标 cf_blocked 并退避，不污染 session 状态
+				backoff(job, "cf_blocked")
+				return
+			}
+			if apiErr.Unauthorized() {
+				job.SessionState = "invalid"
+				job.SessionCheckedAt = nowString()
+				fail(db.CardDeleteFailed, "token_invalid", apiErr.Status)
+				return
+			}
 		}
 		backoff(job, "network")
 		return
@@ -249,6 +258,10 @@ func RunJob(jobID int64) {
 		}
 		waitRate()
 		if st, err := cli.SetDefault(sess, other.ID, setDefaultOptions()); err != nil {
+			if apiErr, ok := err.(*APIError); ok && apiErr.Cloudflare() {
+				backoff(job, "cf_blocked")
+				return
+			}
 			log.Printf("[card-delete] order=%d setdefault pm=%s http=%d err=%v", job.OrderID, other.ID, st, err)
 			fail(db.CardDeleteSkipped, "default_card", st)
 			return
@@ -260,6 +273,10 @@ func RunJob(jobID int64) {
 	// 5) 删卡
 	st, ok, err := cli.Delete(sess, target.ID)
 	if err != nil {
+		if apiErr, isAPI := err.(*APIError); isAPI && apiErr.Cloudflare() {
+			backoff(job, "cf_blocked")
+			return
+		}
 		backoff(job, "network")
 		return
 	}
@@ -285,6 +302,26 @@ func RunJob(jobID int64) {
 func backoff(job *db.CardDeleteJob, reason string) {
 	job.Attempts++
 	switch reason {
+	case "cf_blocked":
+		// Cloudflare 拦截：与凭据无关，退避后重试；到上限只标失败，不刷大量记录
+		limit := settingInt(settingMaxAttempts, defaultMaxAttempts)
+		if job.Attempts >= limit {
+			job.Action = db.CardDeleteFailed
+			job.Reason = "cf_blocked"
+			job.NextRunAt = ""
+			_ = db.UpdateCardDeleteJob(*job)
+			log.Printf("[card-delete] order=%d still blocked by cloudflare after %d attempts", job.OrderID, job.Attempts)
+			return
+		}
+		steps := []time.Duration{5 * time.Minute, 15 * time.Minute, 60 * time.Minute}
+		idx := job.Attempts - 1
+		if idx < 0 {
+			idx = 0
+		}
+		if idx >= len(steps) {
+			idx = len(steps) - 1
+		}
+		job.NextRunAt = time.Now().UTC().Add(steps[idx]).Format("2006-01-02 15:04:05")
 	case "still_renewing", "subscription_unknown":
 		limit := settingInt(settingRenewAttempts, defaultRenewAttempts)
 		if job.Attempts >= limit {
@@ -366,8 +403,13 @@ func CheckSession(cdkID int64) (string, error) {
 	}
 	waitRate()
 	if _, err := cli.List(sess); err != nil {
-		if apiErr, ok := err.(*APIError); ok && apiErr.Unauthorized() {
-			return "invalid", nil
+		if apiErr, ok := err.(*APIError); ok {
+			if apiErr.Cloudflare() {
+				return "unknown", fmt.Errorf("cloudflare blocked")
+			}
+			if apiErr.Unauthorized() {
+				return "invalid", nil
+			}
 		}
 		return "unknown", err
 	}
@@ -396,11 +438,13 @@ func run(ctx context.Context) {
 }
 
 // scanOnce 从 webhook_events 补入漏掉的任务（服务重启会丢 goroutine）。
+// 只补 card_delete_since 之后的订单：更早的订单 session 多半已过期，回补没有意义。
 func scanOnce(ctx context.Context) {
 	if !Enabled() {
 		return
 	}
-	payloads, err := db.ListCompletedWebhookPayloads(7, 200)
+	since := strings.TrimSpace(settingStr(settingSince, ""))
+	payloads, err := db.ListCompletedWebhookPayloads(7, 200, since)
 	if err != nil {
 		log.Printf("[card-delete] scan payloads: %v", err)
 		return

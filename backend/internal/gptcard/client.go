@@ -58,8 +58,37 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("chatgpt HTTP %d: %s", e.Status, e.Body)
 }
 
-// Unauthorized 表示凭据失效（401/403）。
-func (e *APIError) Unauthorized() bool { return e.Status == 401 || e.Status == 403 }
+// Cloudflare 判断是否为 Cloudflare 挑战页（返回 HTML 而不是 JSON）。
+// 这种 403 与凭据无关，不能当成 token 失效处理。
+func (e *APIError) Cloudflare() bool {
+	if e.Status != 403 && e.Status != 503 {
+		return false
+	}
+	return looksLikeHTML(e.Body)
+}
+
+// Unauthorized 表示凭据失效（401，或非 Cloudflare 的 403）。
+func (e *APIError) Unauthorized() bool {
+	switch e.Status {
+	case 401:
+		return true
+	case 403:
+		return !e.Cloudflare()
+	}
+	return false
+}
+
+// looksLikeHTML 判断响应体是不是 HTML（Cloudflare 挑战页 / 错误页）。
+func looksLikeHTML(body string) bool {
+	head := strings.ToLower(body)
+	if len(head) > 512 {
+		head = head[:512]
+	}
+	return strings.Contains(head, "<html") ||
+		strings.Contains(head, "<!doctype") ||
+		strings.Contains(head, "cloudflare") ||
+		strings.Contains(head, "just a moment")
+}
 
 // Client 复用 tls-client（Chrome 指纹）。chatgpt.com 在 Cloudflare 后，net/http 会被拦。
 type Client struct {
@@ -175,6 +204,9 @@ func (c *Client) Delete(s *Session, pmID string) (int, bool, error) {
 	st, raw, err := c.do(fhttp.MethodDelete, u, c.headers(s), nil, nil)
 	if err != nil {
 		return 0, false, err
+	}
+	if st == 403 && looksLikeHTML(string(raw)) {
+		return st, false, &APIError{Status: st, Body: snippet(raw)}
 	}
 	ok := false
 	var resp map[string]any

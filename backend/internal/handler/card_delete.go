@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tuzi/cdk-recharge-system/internal/db"
@@ -23,6 +24,7 @@ var cardDeleteSettingKeys = []string{
 	"card_delete_setdefault_method",
 	"card_delete_setdefault_path",
 	"card_delete_setdefault_body",
+	"card_delete_since",
 }
 
 // AdminListCardDeleteJobs GET /api/v1/admin/card-delete/jobs?limit=&action=
@@ -185,6 +187,12 @@ func AdminPutCardDeleteSettings(c *gin.Context) {
 		if err := db.SetSetting(k, strings.TrimSpace(v)); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
+		}
+	}
+	// 首次开启时记录生效时间：只处理此后的新订单，不回补历史单（session 多半已过期）
+	if en, _ := db.GetSetting("card_delete_enabled"); strings.TrimSpace(en) == "1" {
+		if cur, _ := db.GetSetting("card_delete_since"); strings.TrimSpace(cur) == "" {
+			_ = db.SetSetting("card_delete_since", time.Now().UTC().Format("2006-01-02 15:04:05"))
 		}
 	}
 	u, _ := c.Get("username")

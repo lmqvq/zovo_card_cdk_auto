@@ -249,7 +249,8 @@ func CountCardDeleteJobsToday(accountEmail string) (int, error) {
 }
 
 // ListCompletedWebhookPayloads 取最近 N 天内 gpt_direct.completed 的原始 payload（扫描补跑用）。
-func ListCompletedWebhookPayloads(days, limit int) ([]string, error) {
+// since 非空时只返回 created_at >= since 的记录（格式 "2006-01-02 15:04:05"，UTC）。
+func ListCompletedWebhookPayloads(days, limit int, since string) ([]string, error) {
 	if DB == nil {
 		return nil, fmt.Errorf("db not ready")
 	}
@@ -259,11 +260,18 @@ func ListCompletedWebhookPayloads(days, limit int) ([]string, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
-	rows, err := DB.Query(`
-		SELECT payload FROM webhook_events
+	query := `SELECT payload FROM webhook_events
 		WHERE event_type = 'gpt_direct.completed'
-		  AND created_at > datetime('now', ?)
-		ORDER BY id DESC LIMIT ?`, fmt.Sprintf("-%d day", days), limit)
+		  AND created_at > datetime('now', ?)`
+	args := []any{fmt.Sprintf("-%d day", days)}
+	if s := strings.TrimSpace(since); s != "" {
+		query += ` AND created_at >= ?`
+		args = append(args, s)
+	}
+	query += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := DB.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
