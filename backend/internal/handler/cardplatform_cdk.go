@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tuzi/cdk-recharge-system/internal/cardplatform"
 	"github.com/tuzi/cdk-recharge-system/internal/db"
+	"github.com/tuzi/cdk-recharge-system/internal/fx"
 	"github.com/tuzi/cdk-recharge-system/internal/gptcard"
 )
 
@@ -792,6 +794,60 @@ func CardPlatformDeleteCard(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
+// CardPlatformDailySummary GET /api/v1/admin/cardplatform/cdk-orders-summary?date=YYYY-MM-DD
+// 按北京时间某一天统计已完成订单的人民币合计。
+// 只读本地 webhook_events，不请求卡台；汇率走 fx 缓存。
+func CardPlatformDailySummary(c *gin.Context) {
+	date := strings.TrimSpace(c.Query("date"))
+	if date == "" {
+		date = fx.Today()
+	}
+	payloads, err := db.ListCompletedPayloadsOnDate(date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	var cnyTotal, feeTotal float64
+	baseTotals := map[string]float64{}
+	count := 0
+	missingFX := 0
+	for _, p := range payloads {
+		var m map[string]any
+		if json.Unmarshal([]byte(p), &m) != nil {
+			continue
+		}
+		count++
+		cur := strings.ToUpper(strAny(m["currency"]))
+		if cur == "" {
+			cur = "PHP"
+		}
+		baseTotals[cur] += float64(int64Any(m["final_amount_minor"])) / 100
+		feeTotal += float64(int64Any(m["service_fee_minor"])) / 100
+		if cny, ok := cnyOfOrder(m); ok {
+			if v, isNum := cny["amount"].(float64); isNum {
+				cnyTotal += v
+			}
+		} else {
+			missingFX++
+		}
+	}
+	rates := map[string]float64{}
+	for _, b := range []string{"PHP", "USD", "EGP", "CLP"} {
+		if r, _, ok := fx.Rate(date, b); ok {
+			rates[b] = r
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"date":          date,
+		"count":         count,
+		"cny_total":     math.Round(cnyTotal*100) / 100,
+		"fee_usd_total": math.Round(feeTotal*100) / 100,
+		"base_totals":   baseTotals,
+		"rates":         rates,
+		"missing_fx":    missingFX,
+	})
+}
+
 // CardPlatformGetCDKOrder GET /api/v1/admin/cardplatform/cdk-orders/:id
 func CardPlatformGetCDKOrder(c *gin.Context) {
 	id := strings.TrimSpace(c.Param("id"))
@@ -881,10 +937,49 @@ func enrichCDKOrderList(c *gin.Context, cli *cardplatform.Client, raw json.RawMe
 		}
 		// 归一化 CDK 生命周期展示字段
 		m["cdk_lifecycle"] = cdkLifecycleLabel(strAny(m["cdk_status"]), strAny(m["status"]), strAny(m["service_fee_status"]))
+		attachCNY(m)
 		outList = append(outList, m)
 	}
 	attachCardDeleteStatus(outList)
 	return gin.H{"list": outList, "total": total}
+}
+
+// attachCNY 给订单挂人民币折算（按订单完成时间的北京时间当日汇率）。
+func attachCNY(m map[string]any) {
+	cny, ok := cnyOfOrder(m)
+	if ok {
+		m["cny"] = cny
+		return
+	}
+	m["cny"] = nil
+}
+
+// cnyOfOrder 计算订单的人民币合计：本币金额×当日汇率 + 服务费×USD当日汇率。
+func cnyOfOrder(m map[string]any) (map[string]any, bool) {
+	date := fx.DateOf(int64Any(m["completed_at"]))
+	if date == "" {
+		date = fx.Today()
+	}
+	cur := strings.ToUpper(strAny(m["currency"]))
+	if cur == "" {
+		cur = "PHP"
+	}
+	finalMinor := int64Any(m["final_amount_minor"])
+	feeMinor := int64Any(m["service_fee_minor"])
+
+	rateCur, srcCur, okCur := fx.Rate(date, cur)
+	rateUSD, srcUSD, okUSD := fx.Rate(date, "USD")
+	if !okCur || !okUSD {
+		return nil, false
+	}
+	amount := float64(finalMinor)/100*rateCur + float64(feeMinor)/100*rateUSD
+	return map[string]any{
+		"amount":    math.Round(amount*100) / 100,
+		"rate_base": rateCur,
+		"rate_usd":  rateUSD,
+		"rate_date": date,
+		"estimated": strings.Contains(srcCur, "fallback") || strings.Contains(srcUSD, "fallback"),
+	}, true
 }
 
 // attachCardDeleteStatus 给订单列表挂上"解绑卡"状态（一次 IN 查询，不额外请求）。
@@ -966,6 +1061,7 @@ func enrichOneCDKOrder(c *gin.Context, cli *cardplatform.Client, m map[string]an
 		}
 	}
 	m["cdk_lifecycle"] = cdkLifecycleLabel(strAny(m["cdk_status"]), strAny(m["status"]), strAny(m["service_fee_status"]))
+	attachCNY(m)
 	if id := orderIDOf(m); id > 0 {
 		if jobs, err := db.ListCardDeleteJobsByOrderIDs([]int64{id}); err == nil {
 			if j, ok := jobs[id]; ok {

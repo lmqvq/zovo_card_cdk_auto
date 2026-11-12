@@ -32,7 +32,20 @@
         @keyup.enter="onFilterChange"
         @clear="onFilterChange"
       />
+      <el-date-picker
+        v-model="selectedDate"
+        type="date"
+        value-format="YYYY-MM-DD"
+        placeholder="按开通日期（本页）"
+        style="width: 180px"
+        @change="onDateChange"
+      />
       <el-button @click="onFilterChange">筛选</el-button>
+      <span v-if="daySummary" class="text-muted">
+        {{ daySummary.date }} 全天合计
+        <b class="mono text-ink">≈ ¥{{ Number(daySummary.cny_total || 0).toFixed(2) }}</b>
+        <span class="text-xs">（{{ daySummary.count }} 笔）</span>
+      </span>
     </div>
 
     <div v-if="error" class="alert alert-error">{{ error }}</div>
@@ -74,10 +87,11 @@
             <span v-else class="text-xs text-subtle">— 未处理</span>
           </template>
         </el-table-column>
-        <el-table-column label="消耗金额" width="120">
+        <el-table-column label="消耗金额" width="128">
           <template #default="{ row }">
             <div class="mono text-sm">{{ amountLabel(row) }}</div>
             <div class="text-xs text-subtle">费 {{ feeLabel(row) }}</div>
+            <div class="text-xs" :style="{ color: cnyColor(row) }">≈ {{ cnyLabel(row) }}</div>
           </template>
         </el-table-column>
         <el-table-column label="订单状态" width="110">
@@ -151,6 +165,12 @@
           <el-descriptions-item label="卡充值额">{{ fundingCardLabel(detail) }}</el-descriptions-item>
           <el-descriptions-item label="实付">{{ amountLabel(detail) }}</el-descriptions-item>
           <el-descriptions-item label="服务费">{{ feeLabel(detail) }}（{{ detail.service_fee_status || '—' }}）</el-descriptions-item>
+          <el-descriptions-item label="折合人民币">
+            <span class="mono">≈ {{ cnyLabel(detail) }}</span>
+            <span v-if="detail.cny" class="text-xs text-subtle ml-1">
+              （{{ detail.cny.rate_date }}：1 {{ detail.currency || 'PHP' }} = {{ Number(detail.cny.rate_base).toFixed(6) }} CNY，1 USD = {{ Number(detail.cny.rate_usd).toFixed(4) }} CNY）
+            </span>
+          </el-descriptions-item>
           <el-descriptions-item label="订单状态">{{ detail.status }} / {{ detail.stage || '—' }}</el-descriptions-item>
           <el-descriptions-item label="支付状态">{{ detail.payment_state || '—' }}</el-descriptions-item>
           <el-descriptions-item label="资金状态">{{ detail.funding_state || '—' }} / {{ detail.funding_hold_status || '—' }}</el-descriptions-item>
@@ -270,6 +290,8 @@ const loading = ref(false)
 const error = ref('')
 const statusFilter = ref('')
 const emailQ = ref('')
+const selectedDate = ref('')
+const daySummary = ref<any>(null)
 const detailOpen = ref(false)
 const detail = ref<any>(null)
 const deletingId = ref('')
@@ -305,15 +327,59 @@ const totalPages = computed(() => {
   return Math.max(1, Math.ceil(t / s))
 })
 
-/** 状态已服务端筛选；邮箱仍为本页关键字过滤（卡台 OpenAPI 无 email 参数） */
+/** 状态已服务端筛选；邮箱与日期为本页关键字过滤（卡台 OpenAPI 无对应参数） */
 const displayRows = computed(() => {
   let list = rows.value
   const q = emailQ.value.trim().toLowerCase()
   if (q) {
     list = list.filter((r) => String(r.account_email || '').toLowerCase().includes(q))
   }
+  if (selectedDate.value) {
+    list = list.filter((r) => cstDateOf(r.completed_at || r.created_at) === selectedDate.value)
+  }
   return list
 })
+
+/** unix 秒 → 北京时间日期（YYYY-MM-DD） */
+function cstDateOf(v: any): string {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  const d = new Date((n + 8 * 3600) * 1000)
+  return d.toISOString().slice(0, 10)
+}
+
+function cnyLabel(row: any): string {
+  const cny = row?.cny
+  if (!cny) return '¥ —'
+  const v = Number(cny.amount)
+  if (!Number.isFinite(v)) return '¥ —'
+  return '¥' + v.toFixed(2) + (cny.estimated ? '*' : '')
+}
+
+function cnyColor(row: any): string {
+  return row?.cny ? 'var(--text-subtle, #64748b)' : 'var(--text-subtle, #94a3b8)'
+}
+
+async function loadSummary() {
+  if (!selectedDate.value) {
+    daySummary.value = null
+    return
+  }
+  try {
+    const r = await authFetch(
+      `/api/v1/admin/cardplatform/cdk-orders-summary?date=${encodeURIComponent(selectedDate.value)}`,
+    )
+    if (r.ok) {
+      daySummary.value = await r.json()
+    }
+  } catch {
+    daySummary.value = null
+  }
+}
+
+function onDateChange() {
+  loadSummary()
+}
 
 function minorMoney(minor: any, currency = '') {
   const n = Number(minor)

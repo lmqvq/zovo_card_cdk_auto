@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tuzi/cdk-recharge-system/internal/config"
 	"github.com/tuzi/cdk-recharge-system/internal/db"
+	"github.com/tuzi/cdk-recharge-system/internal/fx"
 	"github.com/tuzi/cdk-recharge-system/internal/gptcard"
 	"github.com/tuzi/cdk-recharge-system/internal/handler"
 	"github.com/tuzi/cdk-recharge-system/internal/plansync"
@@ -55,6 +56,9 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 
 	// 启动兑换后解绑卡的后台补偿任务（开关关闭时内部直接返回）
 	gptcard.Start(ctx)
+
+	// 启动汇率补齐任务（对账页人民币折算用）
+	fx.Start(ctx)
 
 	return &Server{
 		engine: engine,
@@ -205,6 +209,7 @@ func setupRoutes(r *gin.Engine) {
 			admin.POST("/cardplatform/cdks/:id/disable", handler.CardPlatformDisableCDK)
 			admin.POST("/cardplatform/cdks/:id/enable", handler.CardPlatformEnableCDK)
 			admin.GET("/cardplatform/cdk-orders", handler.CardPlatformListCDKOrders)
+			admin.GET("/cardplatform/cdk-orders-summary", handler.CardPlatformDailySummary)
 			admin.GET("/cardplatform/cdk-orders/:id", handler.CardPlatformGetCDKOrder)
 			admin.DELETE("/cardplatform/cards/:id", handler.CardPlatformDeleteCard)
 

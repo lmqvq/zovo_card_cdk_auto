@@ -292,6 +292,18 @@ func createTables() error {
 			captured_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_card_snapshot_at ON card_snapshots(captured_at)`,
+
+		// 汇率缓存：一天一个货币一行（对账页人民币折算用）
+		`CREATE TABLE IF NOT EXISTS fx_rates (
+			rate_date TEXT NOT NULL,
+			base TEXT NOT NULL,
+			quote TEXT NOT NULL DEFAULT 'CNY',
+			rate REAL NOT NULL,
+			source TEXT DEFAULT '',
+			fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (rate_date, base, quote)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_fx_base ON fx_rates(base, rate_date)`,
 	}
 
 	for _, query := range queries {
