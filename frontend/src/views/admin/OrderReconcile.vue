@@ -61,19 +61,17 @@
             <span class="mono text-sm">{{ cardLabel(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="解绑卡" width="120">
+        <el-table-column label="解绑卡 / Session" width="168">
           <template #default="{ row }">
-            <el-tag v-if="row.card_delete" size="small" :type="cdTagType(row.card_delete)">
-              {{ cdLabel(row.card_delete) }}
-            </el-tag>
-            <span v-else class="text-xs text-subtle">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="Session" width="96">
-          <template #default="{ row }">
-            <span class="text-xs" :style="{ color: sessionColor(row.card_delete?.session_state) }">
-              {{ sessionLabel(row.card_delete?.session_state) }}
-            </span>
+            <div v-if="row.card_delete" class="flex flex-col gap-1">
+              <el-tag size="small" :type="cdTagType(row.card_delete)">
+                {{ cdLabel(row.card_delete) }}
+              </el-tag>
+              <span class="text-xs" :style="{ color: sessionColor(row.card_delete.session_state) }">
+                {{ sessionLabel(row.card_delete.session_state) }}
+              </span>
+            </div>
+            <span v-else class="text-xs text-subtle">— 未处理</span>
           </template>
         </el-table-column>
         <el-table-column label="消耗金额" width="120">
