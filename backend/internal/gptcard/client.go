@@ -98,12 +98,22 @@ type Client struct {
 
 // NewClient 创建一个带浏览器指纹的客户端。
 func NewClient() (*Client, error) {
-	httpc, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(),
+	return NewClientWithProxy("")
+}
+
+// NewClientWithProxy 与 NewClient 相同，但走指定代理（http://user:pass@host:port）。
+// 机房 IP 直连 chatgpt.com 会被 Cloudflare 无条件拦，必须配住宅/ISP 代理。
+func NewClientWithProxy(proxyURL string) (*Client, error) {
+	opts := []tls_client.HttpClientOption{
 		tls_client.WithTimeoutSeconds(30),
 		tls_client.WithClientProfile(profiles.Chrome_131),
 		tls_client.WithForceHttp1(),
 		tls_client.WithNotFollowRedirects(),
-	)
+	}
+	if p := strings.TrimSpace(proxyURL); p != "" {
+		opts = append(opts, tls_client.WithProxyUrl(p))
+	}
+	httpc, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("初始化 tls-client 失败: %w", err)
 	}

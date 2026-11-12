@@ -244,6 +244,9 @@
             {{ cdSettings.card_delete_since || '首次开启时自动记录，只处理此后的新订单' }}
           </span>
         </el-form-item>
+        <el-form-item label="出口代理">
+          <el-input v-model="cdSettings.card_delete_proxy" placeholder="http://user:pass@host:port" />
+        </el-form-item>
       </el-form>
       <div class="flex gap-2">
         <el-button type="primary" :loading="cdSaving" @click="saveCdSettings">保存</el-button>
@@ -283,6 +286,7 @@ const cdSettings = ref<Record<string, string>>({
   card_delete_rate_per_minute: '30',
   card_delete_concurrency: '2',
   card_delete_since: '',
+  card_delete_proxy: '',
 })
 
 const statusOptions = [

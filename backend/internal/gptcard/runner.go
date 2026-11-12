@@ -27,6 +27,8 @@ const (
 	settingSetDefaultBody   = "card_delete_setdefault_body"
 	// settingSince 只处理该时间之后完成的订单（老订单 session 基本已过期，不做回补）
 	settingSince = "card_delete_since"
+	// settingProxy 出口代理，如 http://user:pass@host:port（机房 IP 直连会被 Cloudflare 拦）
+	settingProxy = "card_delete_proxy"
 )
 
 const (
@@ -81,6 +83,11 @@ func setDefaultOptions() SetDefaultOptions {
 		Path:   settingStr(settingSetDefaultPath, def.Path),
 		Body:   settingStr(settingSetDefaultBody, def.Body),
 	}
+}
+
+// newClient 按配置构造客户端；配了代理就走代理。
+func newClient() (*Client, error) {
+	return NewClientWithProxy(strings.TrimSpace(settingStr(settingProxy, "")))
 }
 
 // EnqueueFromWebhook 由 gpt_direct.completed webhook 调用：
@@ -172,7 +179,7 @@ func RunJob(jobID int64) {
 		return
 	}
 
-	cli, err := NewClient()
+	cli, err := newClient()
 	if err != nil {
 		fail(db.CardDeleteFailed, "client_init", 0)
 		return
@@ -392,7 +399,7 @@ func CheckSession(cdkID int64) (string, error) {
 	if err != nil {
 		return "invalid", nil
 	}
-	cli, err := NewClient()
+	cli, err := newClient()
 	if err != nil {
 		return "unknown", err
 	}

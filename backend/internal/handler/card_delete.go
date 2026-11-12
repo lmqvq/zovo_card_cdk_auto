@@ -25,6 +25,7 @@ var cardDeleteSettingKeys = []string{
 	"card_delete_setdefault_path",
 	"card_delete_setdefault_body",
 	"card_delete_since",
+	"card_delete_proxy",
 }
 
 // AdminListCardDeleteJobs GET /api/v1/admin/card-delete/jobs?limit=&action=
