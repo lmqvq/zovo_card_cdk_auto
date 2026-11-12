@@ -284,6 +284,14 @@ func createTables() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_card_delete_action ON card_delete_jobs(action, next_run_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_card_delete_order ON card_delete_jobs(order_id)`,
+
+		// 兑换前快照：记录账号已有 payment_method id，兑换后 diff 出"本单新增的卡"
+		`CREATE TABLE IF NOT EXISTS card_snapshots (
+			cdk_code TEXT PRIMARY KEY,
+			pm_ids TEXT NOT NULL DEFAULT '',
+			captured_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_card_snapshot_at ON card_snapshots(captured_at)`,
 	}
 
 	for _, query := range queries {

@@ -489,7 +489,10 @@ async function deleteCard(row: any) {
 function cdLabel(cd: any): string {
   if (!cd) return '—'
   if (cd.action === 'done') {
-    return cd.reason === 'default_switched' ? '✅ 已解绑(换默认)' : '✅ 已解绑'
+    if (cd.reason === 'deleted_verified') return '✅ 已解绑·已核验'
+    if (cd.reason === 'deleted_unverified') return '✅ 已解绑·未核验'
+    if (cd.reason === 'default_switched') return '✅ 已解绑(换默认)'
+    return '✅ 已解绑'
   }
   if (cd.action === 'skipped') {
     const map: Record<string, string> = {

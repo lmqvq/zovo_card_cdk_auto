@@ -317,3 +317,54 @@ func nullIfEmpty(s string) any {
 	}
 	return s
 }
+
+// SaveCardSnapshot 记录兑换前账号已有的 payment_method id（逗号分隔）。
+func SaveCardSnapshot(cdkCode, pmIDs string) error {
+	if DB == nil {
+		return fmt.Errorf("db not ready")
+	}
+	code := strings.ToUpper(strings.TrimSpace(cdkCode))
+	if code == "" {
+		return nil
+	}
+	_, err := DB.Exec(`
+		INSERT INTO card_snapshots (cdk_code, pm_ids, captured_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(cdk_code) DO UPDATE SET
+			pm_ids = excluded.pm_ids,
+			captured_at = CURRENT_TIMESTAMP`, code, strings.TrimSpace(pmIDs))
+	return err
+}
+
+// GetCardSnapshot 读取兑换前快照；ok=false 表示没有快照（老单或抓取失败）。
+func GetCardSnapshot(cdkCode string) (pmIDs string, ok bool, err error) {
+	if DB == nil {
+		return "", false, fmt.Errorf("db not ready")
+	}
+	code := strings.ToUpper(strings.TrimSpace(cdkCode))
+	if code == "" {
+		return "", false, nil
+	}
+	var ids string
+	err = DB.QueryRow(`SELECT COALESCE(pm_ids,'') FROM card_snapshots WHERE cdk_code = ?`, code).Scan(&ids)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return ids, true, nil
+}
+
+// PruneCardSnapshots 清理过旧快照（默认保留 30 天）。
+func PruneCardSnapshots(days int) error {
+	if DB == nil {
+		return fmt.Errorf("db not ready")
+	}
+	if days <= 0 {
+		days = 30
+	}
+	_, err := DB.Exec(`DELETE FROM card_snapshots WHERE captured_at < datetime('now', ?)`,
+		fmt.Sprintf("-%d day", days))
+	return err
+}

@@ -173,7 +173,7 @@ func RunJob(jobID int64) {
 		return
 	}
 
-	sess, err := loadSession(job)
+	sess, cdkCode, err := loadSession(job)
 	if err != nil {
 		fail(db.CardDeleteSkipped, "no_session", 0)
 		return
@@ -244,7 +244,7 @@ func RunJob(jobID int64) {
 		fail(db.CardDeleteSkipped, "last_card", 0)
 		return
 	}
-	target, reason := pickTarget(cards, job.CardLastFour)
+	target, reason := pickTarget(cards, job.CardLastFour, cdkCode)
 	if reason == "ambiguous" {
 		fail(db.CardDeleteReview, "ambiguous", 0)
 		return
@@ -289,7 +289,24 @@ func RunJob(jobID int64) {
 	}
 	job.HTTPStatus = st
 	if st == 200 && ok {
-		fail(db.CardDeleteDone, "", 200)
+		// 删后核验：再列一次，确认这个 pm 真的不在列表里
+		waitRate()
+		if list2, lerr := cli.List(sess); lerr == nil {
+			still := false
+			for _, c := range list2.Cards {
+				if c.ID == target.ID {
+					still = true
+					break
+				}
+			}
+			if still {
+				fail(db.CardDeleteDone, "deleted_unverified", 200)
+			} else {
+				fail(db.CardDeleteDone, "deleted_verified", 200)
+			}
+			return
+		}
+		fail(db.CardDeleteDone, "deleted_unverified", 200)
 		return
 	}
 	if st == 401 || st == 403 {
@@ -505,12 +522,20 @@ func runDue(ctx context.Context) {
 	}
 }
 
-func loadSession(job *db.CardDeleteJob) (*Session, error) {
-	raw, err := sessionByCDK(job.CDKID)
-	if err != nil || strings.TrimSpace(raw) == "" {
-		return nil, fmt.Errorf("no session")
+func loadSession(job *db.CardDeleteJob) (*Session, string, error) {
+	code, ok := db.LookupCardplatformCDKCode(job.CDKID, "")
+	if !ok || strings.TrimSpace(code) == "" {
+		return nil, "", fmt.Errorf("cdk %d not found", job.CDKID)
 	}
-	return ParseSession(raw)
+	raw, err := db.GetSessionByCDK(code)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return nil, "", fmt.Errorf("no session")
+	}
+	sess, err := ParseSession(raw)
+	if err != nil {
+		return nil, "", err
+	}
+	return sess, strings.TrimSpace(code), nil
 }
 
 // SessionMaterial 返回某张卡密绑定的会话材料。
@@ -553,11 +578,48 @@ func queryWillRenew(s *Session) (willRenew bool, queried bool) {
 	return willRenew, true
 }
 
-// pickTarget 按尾号定位本次支付卡。多张命中 → ambiguous（人工）。
-func pickTarget(list *CardList, last4 string) (*Card, string) {
+// pickTarget 定位"本单实际扣款的那张卡"。
+//
+// 优先用兑换前快照做 diff：快照里没有的 pm 就是本单新增的卡（即使尾号与老卡相同也能区分）；
+// 没有快照（老单 / 抓取失败）时退回按尾号匹配。
+func pickTarget(list *CardList, last4 string, cdkCode string) (*Card, string) {
 	if list == nil {
 		return nil, "not_found"
 	}
+	if ids, ok, err := db.GetCardSnapshot(cdkCode); err == nil && ok {
+		prev := map[string]bool{}
+		for _, id := range strings.Split(ids, ",") {
+			if s := strings.TrimSpace(id); s != "" {
+				prev[s] = true
+			}
+		}
+		var added []Card
+		for _, c := range list.Cards {
+			if c.ID != "" && !prev[c.ID] {
+				added = append(added, c)
+			}
+		}
+		switch len(added) {
+		case 1:
+			c := added[0]
+			return &c, ""
+		case 0:
+			// 没有新增卡：可能已经删过，或快照未覆盖，退回尾号
+		default:
+			var hit []Card
+			for _, c := range added {
+				if c.Last4 == last4 {
+					hit = append(hit, c)
+				}
+			}
+			if len(hit) == 1 {
+				c := hit[0]
+				return &c, ""
+			}
+			return nil, "ambiguous"
+		}
+	}
+
 	var matched []Card
 	for _, c := range list.Cards {
 		if c.Last4 == last4 {
@@ -573,6 +635,53 @@ func pickTarget(list *CardList, last4 string) (*Card, string) {
 	default:
 		return nil, "ambiguous"
 	}
+}
+
+// CaptureSnapshot 兑换前记录账号已有的支付方式，供完成后 diff 出"本单新增卡"。
+// 异步调用、失败静默：拿不到快照时 pickTarget 会退回尾号匹配。
+func CaptureSnapshot(cdkCode, sessionPayload string) {
+	if !Enabled() {
+		return
+	}
+	payload := strings.TrimSpace(sessionPayload)
+	code := strings.TrimSpace(cdkCode)
+	if payload == "" || code == "" {
+		return
+	}
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[card-delete] snapshot panic: %v", r)
+			}
+		}()
+		sess, err := ParseSession(payload)
+		if err != nil {
+			return
+		}
+		cli, err := newClient()
+		if err != nil {
+			return
+		}
+		if sess.AccessToken == "" {
+			if err := cli.Refresh(sess); err != nil {
+				return
+			}
+		}
+		waitRate()
+		list, err := cli.List(sess)
+		if err != nil {
+			return
+		}
+		ids := make([]string, 0, len(list.Cards))
+		for _, c := range list.Cards {
+			if c.ID != "" {
+				ids = append(ids, c.ID)
+			}
+		}
+		if err := db.SaveCardSnapshot(code, strings.Join(ids, ",")); err != nil {
+			log.Printf("[card-delete] save snapshot failed: %v", err)
+		}
+	}()
 }
 
 func pickOther(list *CardList, targetID string) *Card {

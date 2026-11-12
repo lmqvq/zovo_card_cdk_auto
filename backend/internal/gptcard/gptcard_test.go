@@ -204,18 +204,18 @@ func TestPickTarget(t *testing.T) {
 		{ID: "pm_1", Last4: "3948"},
 		{ID: "pm_2", Last4: "4880"},
 	}}
-	target, reason := pickTarget(list, "3948")
+	target, reason := pickTarget(list, "3948", "TEST-CD-H")
 	if reason != "" || target == nil || target.ID != "pm_1" {
 		t.Fatalf("target=%v reason=%s", target, reason)
 	}
-	if _, reason := pickTarget(list, "0000"); reason != "not_found" {
+	if _, reason := pickTarget(list, "0000", "TEST-CD-H"); reason != "not_found" {
 		t.Fatalf("reason = %s", reason)
 	}
 	dup := &CardList{Cards: []Card{
 		{ID: "pm_1", Last4: "1111"},
 		{ID: "pm_2", Last4: "1111"},
 	}}
-	if _, reason := pickTarget(dup, "1111"); reason != "ambiguous" {
+	if _, reason := pickTarget(dup, "1111", "TEST-CD-H"); reason != "ambiguous" {
 		t.Fatalf("reason = %s, want ambiguous", reason)
 	}
 	if pickOther(list, "pm_1") == nil || pickOther(list, "pm_1").ID != "pm_2" {

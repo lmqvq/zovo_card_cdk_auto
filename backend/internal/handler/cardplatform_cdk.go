@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tuzi/cdk-recharge-system/internal/cardplatform"
 	"github.com/tuzi/cdk-recharge-system/internal/db"
+	"github.com/tuzi/cdk-recharge-system/internal/gptcard"
 )
 
 func writeCardErr(c *gin.Context, err error) {
@@ -1106,6 +1107,8 @@ func PublicCDKPreflight(c *gin.Context) {
 		if err := db.BindCDKSession(code, tok, sess); err != nil {
 			log.Printf("[cdk-preflight] bind session failed code=%s tok=%s: %v", code, shortTok(tok), err)
 		}
+		// 兑换前快照：记录账号已有支付卡，完成后 diff 出"本单新增卡"（异步，失败不影响预检）
+		gptcard.CaptureSnapshot(code, sess)
 	} else if st >= 200 && st < 300 {
 		log.Printf("[cdk-preflight] no session to bind (mode may be mailbox) tok=%s", shortTok(tok))
 	}
