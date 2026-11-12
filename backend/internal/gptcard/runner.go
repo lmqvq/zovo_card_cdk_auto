@@ -47,6 +47,7 @@ var (
 	acctMu   sync.Mutex
 	acctLast = map[string]time.Time{}
 	running  sync.Map // job_id -> struct{}，保证同一任务不会被并发执行
+	lastPrune time.Time
 )
 
 // Enabled 读取总开关。
@@ -457,7 +458,25 @@ func run(ctx context.Context) {
 		case <-ticker.C:
 			scanOnce(ctx)
 			runDue(ctx)
+			maybePruneSnapshots()
 		}
+	}
+}
+
+// maybePruneSnapshots 每天清理一次 30 天前的兑换前快照。
+// 只操作 card_snapshots 表，不触碰任何其他数据。
+func maybePruneSnapshots() {
+	if time.Since(lastPrune) < 24*time.Hour {
+		return
+	}
+	lastPrune = time.Now()
+	n, err := db.PruneCardSnapshots(30)
+	if err != nil {
+		log.Printf("[card-delete] prune snapshots: %v", err)
+		return
+	}
+	if n > 0 {
+		log.Printf("[card-delete] pruned %d old snapshots", n)
 	}
 }
 

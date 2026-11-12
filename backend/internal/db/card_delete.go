@@ -357,14 +357,18 @@ func GetCardSnapshot(cdkCode string) (pmIDs string, ok bool, err error) {
 }
 
 // PruneCardSnapshots 清理过旧快照（默认保留 30 天）。
-func PruneCardSnapshots(days int) error {
+// 只删 card_snapshots 一张表，不涉及任何其他业务数据。
+func PruneCardSnapshots(days int) (int64, error) {
 	if DB == nil {
-		return fmt.Errorf("db not ready")
+		return 0, fmt.Errorf("db not ready")
 	}
 	if days <= 0 {
 		days = 30
 	}
-	_, err := DB.Exec(`DELETE FROM card_snapshots WHERE captured_at < datetime('now', ?)`,
+	res, err := DB.Exec(`DELETE FROM card_snapshots WHERE captured_at < datetime('now', ?)`,
 		fmt.Sprintf("-%d day", days))
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
