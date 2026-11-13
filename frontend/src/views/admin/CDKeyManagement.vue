@@ -399,6 +399,15 @@ const issuing = ref(false)
 const issueError = ref('')
 const issueOk = ref('')
 const recentCodes = ref<string[]>([])
+// 发码幂等键（v1.4.35.27）：同一次"发码尝试"的重试必须复用同一个 Idempotency-Key，
+// 否则超时重试会被卡台当成第二笔请求，真的再发一批。参数一改就换新键。
+let pendingIssueKey = ''
+let pendingIssueSig = ''
+function newIssueKey(): string {
+  const c: any = (globalThis as any).crypto
+  if (c && typeof c.randomUUID === 'function') return String(c.randomUUID())
+  return `issue-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
 // region 一并记下来：整批码是复制出去卖的，事后只能从这条横幅确认
 // 「刚买的这 200 张到底是哪个区的」——码文本身看不出地区。
 const recentMeta = ref<{ plan: string; atLabel: string; region: string } | null>(null)
@@ -1244,10 +1253,18 @@ async function issue() {
   issueError.value = ''
   issueOk.value = ''
   if (!canIssue.value) return
+  // 同一次发码尝试（参数未变）复用同一个幂等键：网络超时后重试不会变成第二次购买。
+  const issueSig = `${directProduct.value}|${form.plan}|${form.count}|${form.payment_country || ''}`
+  if (!pendingIssueKey || pendingIssueSig !== issueSig) {
+    pendingIssueKey = newIssueKey()
+    pendingIssueSig = issueSig
+  }
+  const issueKey = pendingIssueKey
   issuing.value = true
   try {
     const r = await authFetch('/api/v1/admin/cardplatform/cdks', {
       method: 'POST',
+      headers: { 'Idempotency-Key': issueKey },
       body: JSON.stringify({
         plan: form.plan,
         product: directProduct.value,
@@ -1260,26 +1277,30 @@ async function issue() {
     })
     const d = await r.json().catch(() => ({}))
     if (!r.ok) {
-      const recovered = await syncFromCardplatform({ quiet: true, plan: form.plan, status: 'unused' })
-      const recCodes = Array.isArray(recovered?.codes) ? recovered.codes.map(extractFullCode).filter(Boolean) : []
-      if (recCodes.length) {
-        recentCodes.value = recCodes
-        // ★这里不传地区★：找回是按「plan + unused」从卡台捞最近的码，
-        // 捞到的不一定全是这一批，标上地区等于给出一个可能是错的承诺。
-        persistRecent(recCodes, form.plan)
-        issueOk.value = `发码请求未完成，已从卡台找回 ${recCodes.length} 张完整码。不要再点购买。`
-        dialog.toast(issueOk.value, 'warn')
-        await loadList()
-        await loadMeta()
-        return
-      }
+      // v1.4.35.27：不再"从卡台找回库存"。以前这里会按 plan+unused 捞一批码当成本批，
+      // 捞到的可能是历史批次/别人刚发的/官网卖出的，造成重复售卖。现在只如实报错，
+      // 并给出发码请求编号，由操作者到卡台核对；用同一编号重试是幂等的。
       const msg = d.error || d.msg || '发码失败'
-      issueError.value = msg
+      let text = msg
+      if (d.request_id) text += `（请求编号：${d.request_id}）`
+      if (d.result_unknown) {
+        // 结果未确认：保留同一个幂等键，下一次点击"购买"仍会用这个编号重试。
+        text += '。结果未确认：请先到卡台 CDK 列表按该请求编号核对，确认没有再重试；直接再点一次购买会沿用同一请求编号，是安全的'
+      } else {
+        // 确定失败（参数/权限等），换新键，避免下次用旧键撞上缓存。
+        pendingIssueKey = ''
+        pendingIssueSig = ''
+        text += '。本次未受理，可直接修改参数后重试'
+      }
+      issueError.value = text
       if (String(msg).includes('403') || d.code === 403) {
         issueError.value += ' — 可能是 IP 未进白名单，请复制上方出口 IP 到卡台'
       }
       return
     }
+    // 成功：本次发码结束，清掉幂等键（下一批用新键）。
+    pendingIssueKey = ''
+    pendingIssueSig = ''
     const issued = Array.isArray(d.issued) ? d.issued : (Array.isArray(d.data?.issued) ? d.data.issued : [])
     const codes = issued.map(extractFullCode).filter(Boolean)
     if (!codes.length) {

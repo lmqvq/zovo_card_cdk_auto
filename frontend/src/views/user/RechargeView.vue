@@ -111,7 +111,7 @@
           </div>
           <div class="result-actions">
             <router-link class="btn-secondary result-action" to="/billing">查询账单</router-link>
-            <button class="btn-primary result-action" @click="resetAll">
+            <button class="btn-primary result-action" @click="confirmResetAll">
               再兑一张
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
             </button>
@@ -1852,6 +1852,16 @@ onMounted(() => {
   }
 })
 
+// 「再兑一张」：先确认再清空，避免把上一位客户的凭据带到下一单（v1.4.35.27）。
+async function confirmResetAll() {
+  const ok = await dialog.confirm(
+    '将清空已填写的卡密与账号凭据（Session / 邮箱密码），确认开始下一单？',
+    { title: '再兑一张', okText: '清空并继续', cancelText: '取消' },
+  )
+  if (!ok) return
+  resetAll()
+}
+
 function resetAll() {
   invalidatePreflight()
   resetSessionDrag()
@@ -1860,6 +1870,12 @@ function resetAll() {
   step.value = 1
   error.value = ''
   code.value = ''
+  // 账号凭据必须一起清：否则下一单会沿用上一位客户的 Session / 邮箱密码，
+  // 把新卡密兑进上一个账号（v1.4.35.27 修复）。
+  sessionRaw.value = ''
+  email.value = ''
+  password.value = ''
+  credMode.value = 'session'
   previewInfo.value = null
   redemptionToken.value = ''
   preflightToken.value = ''

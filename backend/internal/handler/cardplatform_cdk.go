@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tuzi/cdk-recharge-system/internal/cardplatform"
@@ -21,7 +23,19 @@ import (
 	"github.com/tuzi/cdk-recharge-system/internal/gptcard"
 )
 
+// writeCardErr 按卡台错误映射成本站响应；字段与历史版本保持一致。
 func writeCardErr(c *gin.Context, err error) {
+	writeCardErrWith(c, err, nil)
+}
+
+// writeCardErrWith 同 writeCardErr，可附加额外字段（例如发码请求编号）。
+func writeCardErrWith(c *gin.Context, err error, extra gin.H) {
+	withExtra := func(body gin.H) gin.H {
+		for k, v := range extra {
+			body[k] = v
+		}
+		return body
+	}
 	if ae, ok := err.(*cardplatform.APIError); ok {
 		status := ae.HTTPStatus
 		if status < 400 {
@@ -47,15 +61,15 @@ func writeCardErr(c *gin.Context, err error) {
 		if code == "" && upstreamAuth {
 			code = "cardplatform_unauthorized"
 		}
-		c.JSON(status, gin.H{
+		c.JSON(status, withExtra(gin.H{
 			"error":      msg,
 			"error_code": code,
 			"code":       ae.Code,
 			"upstream":   true,
-		})
+		}))
 		return
 	}
-	c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "upstream": true})
+	c.JSON(http.StatusBadGateway, withExtra(gin.H{"error": err.Error(), "upstream": true}))
 }
 
 // CardPlatformPlans GET /api/v1/admin/cardplatform/plans
@@ -220,8 +234,6 @@ func CardPlatformIssueCDKs(c *gin.Context) {
 		pref.PaymentCountry = payCountry
 		issuePrefs = append(issuePrefs, pref)
 	}
-	var res *cardplatform.IssueCDKResult
-	var err error
 	wirePlan := plan
 	if product == "grok" {
 		wirePlan = cardplatform.GrokIssuePlan(plan)
@@ -229,27 +241,17 @@ func CardPlatformIssueCDKs(c *gin.Context) {
 	if product == "claude" {
 		wirePlan = cardplatform.ClaudeIssuePlan(plan)
 	}
-	if len(issuePrefs) > 0 {
-		res, err = cli.IssueCDKs(c.Request.Context(), wirePlan, req.Count, idem, issuePrefs[0])
-	} else {
-		res, err = cli.IssueCDKs(c.Request.Context(), wirePlan, req.Count, idem)
-	}
+	// 发码只在"同一个 Idempotency-Key 重放"里确认结果，不再扫描卡台库存（见 v1.4.35.27）。
+	res, replayed, err := issueCDKsWithReplay(c, cli, wirePlan, req.Count, idem, issuePrefs)
 	if err != nil {
-		// 超时/断线时卡台可能已经出码。立刻从卡台列表把完整码捞回本站。
-		if recovered, recErr := cli.SyncUpstreamFullCodes(c.Request.Context(), "unused", plan, 10); recErr == nil && recovered != nil && recovered.Imported > 0 {
-			c.JSON(http.StatusOK, gin.H{
-				"requested":     req.Count,
-				"issued":        recovered.Codes,
-				"count":         len(recovered.Codes),
-				"stored_count":  recovered.Imported,
-				"store_failed":  0,
-				"server_stored": true,
-				"recovered":     true,
-				"msg":           fmt.Sprintf("发码请求未完成，已从卡台找回 %d 张完整码", recovered.Imported),
-			})
-			return
-		}
-		writeCardErr(c, err)
+		// ★这里以前会调 SyncUpstreamFullCodes("unused", plan, 10) 把库存当本批找回★
+		// 那会把该档位下所有未入库的 unused 码（历史批次、别人刚发的、官网卖出的）
+		// 当成"本次已发"，直接造成重复售卖。现在只把请求编号交还操作者人工核对。
+		writeCardErrWith(c, err, gin.H{
+			"request_id":     idem,
+			"result_unknown": issueAmbiguous(err),
+			"hint":           "结果未确认时请先到卡台 CDK 列表按该请求编号核对；用同一请求编号重试是安全的，换新编号重试可能重复发码",
+		})
 		return
 	}
 	u, _ := c.Get("username")
@@ -261,6 +263,9 @@ func CardPlatformIssueCDKs(c *gin.Context) {
 	// 地区同时记录到发码审计和本站完整码缓存。
 	if payCountry != "" {
 		prefNote += " region=" + payCountry
+	}
+	if replayed {
+		prefNote += " replayed=1"
 	}
 	db.WriteAudit(username, "cardplatform_issue_cdk", "plan="+plan+" count="+strconv.Itoa(req.Count)+prefNote, c.ClientIP())
 	// 规范化：保证前端总能拿到完整 code 字段；绝不把 code_prefix 填进 code
@@ -308,7 +313,76 @@ func CardPlatformIssueCDKs(c *gin.Context) {
 		"stored_count":  stored,
 		"store_failed":  storeFailed,
 		"server_stored": true,
+		// 请求编号：与重放使用同一个 Idempotency-Key，便于操作者到卡台核对同一批。
+		"request_id": idem,
+		// true 表示本次结果是"超时后用同一请求编号重放确认"得到的。
+		"replayed": replayed,
 	})
+}
+
+// issueAmbiguous 判断发码失败是否"可能已经出码"——只有这类错误才值得用
+// 同一请求编号重放确认。参数错（400）、鉴权失败（401/403）、限流被拒（429）
+// 属于"确定没有受理"，重放没有意义。
+func issueAmbiguous(err error) bool {
+	var ae *cardplatform.APIError
+	if !errors.As(err, &ae) {
+		// 网络中断 / 超时 / 响应无法解析：无法判定是否已出码，按"可能已出码"处理。
+		return true
+	}
+	switch ae.HTTPStatus {
+	case http.StatusRequestTimeout,
+		http.StatusConflict, // 同 key 仍在处理中：等一会儿用同一 key 再问一次
+		http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return true
+	}
+	return false
+}
+
+// issueCDKsWithReplay 发码，并在"结果不明"时用**同一个 Idempotency-Key** 重放确认。
+//
+// 这是 v1.4.35.27 的核心修复：以前失败后会扫描卡台库存（status=unused 的整个档位），
+// 把历史码当成本批返回，造成重复售卖；现在只认"同一请求编号"的结果——卡台对相同
+// key 的 2xx 结果做缓存，重放拿到的一定是这一批。
+//
+// 重放使用脱离客户端连接的 context：浏览器在长时间等待后断开，不应把重放一并取消。
+func issueCDKsWithReplay(
+	c *gin.Context,
+	cli *cardplatform.Client,
+	plan string,
+	count int,
+	idem string,
+	prefs []cardplatform.IssueCardPref,
+) (*cardplatform.IssueCDKResult, bool, error) {
+	call := func(ctx context.Context) (*cardplatform.IssueCDKResult, error) {
+		if len(prefs) > 0 {
+			return cli.IssueCDKs(ctx, plan, count, idem, prefs[0])
+		}
+		return cli.IssueCDKs(ctx, plan, count, idem)
+	}
+
+	res, err := call(c.Request.Context())
+	if err == nil || !issueAmbiguous(err) {
+		return res, false, err
+	}
+
+	// 两次重放，间隔 2s / 6s：足以覆盖"上游仍在处理中"（409）与短暂 5xx。
+	for _, wait := range []time.Duration{2 * time.Second, 6 * time.Second} {
+		time.Sleep(wait)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 120*time.Second)
+		retryRes, rerr := call(ctx)
+		cancel()
+		if rerr == nil {
+			return retryRes, true, nil
+		}
+		err = rerr
+		if !issueAmbiguous(rerr) {
+			return nil, false, rerr
+		}
+	}
+	return nil, false, err
 }
 
 // CardPlatformSyncUpstreamCDKs POST /api/v1/admin/cardplatform/cdks/sync
