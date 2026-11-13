@@ -74,6 +74,7 @@ func createTables() error {
 		`CREATE INDEX IF NOT EXISTS idx_cd_keys_status ON cd_keys(status)`,
 
 		// 卡台 GPT 直充 CDK：发码时落库完整码，列表仅回前缀时用本表补全（admin 本站复制）
+		// source: zovo（卡台发码）/ local（本站自建，走 Pro20x 通道）
 		`CREATE TABLE IF NOT EXISTS cardplatform_cdk_codes (
 			upstream_id INTEGER,
 			code TEXT NOT NULL UNIQUE,
@@ -82,10 +83,18 @@ func createTables() error {
 			fee_amount_minor INTEGER DEFAULT 0,
 			status TEXT DEFAULT '',
 			payment_country TEXT,
+			source TEXT DEFAULT 'zovo',
+			expires_at DATETIME,
+			batch_no TEXT DEFAULT '',
+			agent_id TEXT DEFAULT '',
+			price_minor INTEGER DEFAULT 0,
+			bound_email TEXT DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_cp_cdk_upstream ON cardplatform_cdk_codes(upstream_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_cp_cdk_prefix ON cardplatform_cdk_codes(code_prefix)`,
+		`CREATE INDEX IF NOT EXISTS idx_cp_cdk_source ON cardplatform_cdk_codes(source, status)`,
+		`CREATE INDEX IF NOT EXISTS idx_cp_cdk_batch ON cardplatform_cdk_codes(batch_no)`,
 
 		// CDK 备注（本站维护，按卡台上游 id；不依赖完整码是否已落库）
 		`CREATE TABLE IF NOT EXISTS cardplatform_cdk_notes (
@@ -350,8 +359,40 @@ func createTables() error {
 	if err := migrateCardplatformCDKRegionCol(); err != nil {
 		return fmt.Errorf("migrate cardplatform CDK region: %w", err)
 	}
+	if err := migrateCDKLocalColumns(); err != nil {
+		return fmt.Errorf("migrate CDK local columns: %w", err)
+	}
 	if err := ensureDefaultAdmin(); err != nil {
 		return err
+	}
+	return nil
+}
+
+// migrateCDKLocalColumns 为自建码补充列（source / 有效期 / 批次 / 代理 / 售价 / 绑定邮箱）。
+// 只做 ADD COLUMN，不改已有数据；旧码默认 source=zovo。
+func migrateCDKLocalColumns() error {
+	if DB == nil {
+		return nil
+	}
+	cols := []struct{ name, ddl string }{
+		{"source", `ALTER TABLE cardplatform_cdk_codes ADD COLUMN source TEXT DEFAULT 'zovo'`},
+		{"expires_at", `ALTER TABLE cardplatform_cdk_codes ADD COLUMN expires_at DATETIME`},
+		{"batch_no", `ALTER TABLE cardplatform_cdk_codes ADD COLUMN batch_no TEXT DEFAULT ''`},
+		{"agent_id", `ALTER TABLE cardplatform_cdk_codes ADD COLUMN agent_id TEXT DEFAULT ''`},
+		{"price_minor", `ALTER TABLE cardplatform_cdk_codes ADD COLUMN price_minor INTEGER DEFAULT 0`},
+		{"bound_email", `ALTER TABLE cardplatform_cdk_codes ADD COLUMN bound_email TEXT DEFAULT ''`},
+	}
+	for _, c := range cols {
+		var n int
+		if err := DB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cardplatform_cdk_codes') WHERE name = ?`, c.name).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			continue
+		}
+		if _, err := DB.Exec(c.ddl); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -221,6 +221,10 @@ func setupRoutes(r *gin.Engine) {
 			admin.GET("/card-delete/settings", handler.AdminGetCardDeleteSettings)
 			admin.PUT("/card-delete/settings", handler.AdminPutCardDeleteSettings)
 
+			// 自建卡密（走 Pro20x 通道）
+			admin.POST("/cdk/local/generate", handler.AdminGenerateLocalCDKs)
+			admin.GET("/cdk/local/list", handler.AdminListLocalCDKs)
+
 			// Webhook 事件列表 + 配置提示
 			admin.GET("/webhooks/events", handler.AdminListWebhooks)
 
