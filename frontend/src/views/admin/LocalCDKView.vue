@@ -53,7 +53,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="plan" label="套餐" width="100" />
-        <el-table-column prop="country" label="地区" width="80" />
+        <el-table-column label="地区" width="120">
+          <template #default="{ row }">{{ countryLabel(row.country) }}</template>
+        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
@@ -64,12 +66,6 @@
           <template #default="{ row }">
             <span class="mono text-xs">{{ row.bound_email || '—' }}</span>
           </template>
-        </el-table-column>
-        <el-table-column label="售价" width="90">
-          <template #default="{ row }">{{ row.price_minor ? (row.price_minor / 100).toFixed(2) : '—' }}</template>
-        </el-table-column>
-        <el-table-column label="有效期" width="150">
-          <template #default="{ row }">{{ row.expires_at || '长期' }}</template>
         </el-table-column>
         <el-table-column label="创建" width="150">
           <template #default="{ row }">{{ row.created_at }}</template>
@@ -201,6 +197,20 @@ function statusLabel(s: string) {
   if (s === 'disabled') return '已禁用'
   if (s === 'consuming') return '兑换中'
   return s
+}
+
+const countryNames: Record<string, string> = {
+  PH: '菲律宾',
+  EG: '埃及',
+  JP: '日本',
+  US: '美区',
+  CL: '智利',
+  SG: '新加坡',
+}
+function countryLabel(c: string) {
+  if (!c) return '—'
+  const name = countryNames[c] || c
+  return `${name} (${c})`
 }
 function statusType(s: string) {
   if (s === 'consumed') return 'info'
