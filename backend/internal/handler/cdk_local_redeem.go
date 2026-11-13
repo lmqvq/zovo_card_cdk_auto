@@ -104,6 +104,42 @@ func previewRateAllow(ip string) bool {
 	return true
 }
 
+// friendlyPro20xError 把 Pro20x 的错误码翻成用户能看懂的提示。
+func friendlyPro20xError(err error) string {
+	s := err.Error()
+	switch {
+	case strings.Contains(s, "protocol_tool_oauth_invalid"):
+		return "Session 已失效，请重新获取完整 Session JSON（必须含 sessionToken）"
+	case strings.Contains(s, "protocol_tool_email_missing"):
+		return "Session 里没有识别到账号邮箱，请重新导出 /api/auth/session"
+	case strings.Contains(s, "protocol_tool_session_invalid"):
+		return "Session 格式不正确，请确认复制的是完整 JSON"
+	case strings.Contains(s, "automate_points_insufficient"):
+		return "Pro20x 积分不足，请先充值"
+	case strings.Contains(s, "automate_key_invalid"), strings.Contains(s, "automate_key_required"):
+		return "Pro20x API Key 无效或未配置"
+	case strings.Contains(s, "automate_rate_limit"):
+		return "请求过于频繁，请稍后再试"
+	case strings.Contains(s, "automate_account_recent_success"):
+		return "该账号刚刚开通过，10 分钟内不能重复提交"
+	case strings.Contains(s, "automate_account_failed_limit"):
+		return "该账号近期失败次数过多，已被临时限制，请稍后再试"
+	case strings.Contains(s, "cloudflare"):
+		return "出口 IP 被 Cloudflare 拦截，请检查网络或代理"
+	}
+	return s
+}
+
+// sessionAsJSON 把 session 字符串解析成对象再交给 Pro20x；
+// Pro20x 的 authSessionJson 支持对象，用对象能避免它识别不到邮箱。
+func sessionAsJSON(raw string) any {
+	var v any
+	if json.Unmarshal([]byte(raw), &v) == nil && v != nil {
+		return v
+	}
+	return raw
+}
+
 // handleLocalPreview 自建码预览。
 func handleLocalPreview(c *gin.Context, code string) {
 	if !localCDKEnabled() {
@@ -202,10 +238,10 @@ func handleLocalPreflight(c *gin.Context, body map[string]any) {
 	cli := pro20x.NewFromSettings()
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 90*time.Second)
 	defer cancel()
-	res, err := cli.AccountCheck(ctx, session)
+	res, err := cli.AccountCheck(ctx, sessionAsJSON(session))
 	if err != nil {
 		log.Printf("[local-cdk] account-check failed order=%d: %v", order.ID, err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "账号检测失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "账号检测失败: " + friendlyPro20xError(err)})
 		return
 	}
 	var acc *pro20x.AccountInfo
@@ -317,7 +353,7 @@ func handleLocalRedeem(c *gin.Context, body map[string]any) {
 		CDKPlan:         order.Plan,
 		Country:         order.Country,
 		FallbackCountry: pro20x.DefaultCountry(),
-		AuthSession:     session,
+		AuthSession:     sessionAsJSON(session),
 		PaymentSource:   source,
 		CardPlatformID:  platformID,
 	})
@@ -336,7 +372,7 @@ func handleLocalRedeem(c *gin.Context, body map[string]any) {
 		releaseCDK()
 		rollbackOrder()
 		log.Printf("[local-cdk] create task failed order=%d: %v", order.ID, err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "提交充值任务失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "提交充值任务失败: " + friendlyPro20xError(err)})
 		return
 	}
 

@@ -11,8 +11,8 @@ import (
 // 自建码字母表：去掉易混字符 0/O/1/I。
 const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
-// GenerateCDKCode 生成与卡台同长度的 24 字符本地码：ZC-XXXXXXXXXX-XXXXXXXXXX。
-// 20 位随机（字母表 32），空间 32^20 ≈ 2^100，爆破不可行。
+// GenerateCDKCode 生成 24 字符本地码：LD-XXXXXXXXXX-XXXXXXXXXX。
+// 用 LD- 前缀与卡台的 ZC- 码区分；20 位随机（字母表 32），空间 32^20 ≈ 2^100。
 func GenerateCDKCode() (string, error) {
 	const n = 20
 	buf := make([]byte, n)
@@ -23,7 +23,7 @@ func GenerateCDKCode() (string, error) {
 	for i := 0; i < n; i++ {
 		chars[i] = codeAlphabet[int(buf[i])%len(codeAlphabet)]
 	}
-	return "ZC-" + string(chars[:10]) + "-" + string(chars[10:]), nil
+	return "LD-" + string(chars[:10]) + "-" + string(chars[10:]), nil
 }
 
 // LocalCDK 是一条自建卡密。

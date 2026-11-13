@@ -89,6 +89,18 @@ type envelope struct {
 	Data      json.RawMessage `json:"data"`
 }
 
+// resolveURL 拼接请求地址；poll 等字段可能返回完整 URL，直接使用。
+func (c *Client) resolveURL(path string) string {
+	p := strings.TrimSpace(path)
+	if strings.HasPrefix(p, "http://") || strings.HasPrefix(p, "https://") {
+		return p
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return c.cfg.BaseURL + p
+}
+
 func (c *Client) do(ctx context.Context, method, path string, body any, idem string) (*envelope, []byte, error) {
 	if c.cfg.APIKey == "" {
 		return nil, nil, &APIError{HTTPStatus: 401, Code: "automate_key_required", Message: "pro20x_api_key not configured"}
@@ -101,7 +113,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, idem str
 		}
 		rdr = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.cfg.BaseURL+path, rdr)
+	req, err := http.NewRequestWithContext(ctx, method, c.resolveURL(path), rdr)
 	if err != nil {
 		return nil, nil, err
 	}
