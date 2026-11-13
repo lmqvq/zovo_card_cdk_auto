@@ -293,6 +293,28 @@ func createTables() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_card_snapshot_at ON card_snapshots(captured_at)`,
 
+		// Pro20x 通道兑换单：本地码走 Pro20x 支付时使用
+		`CREATE TABLE IF NOT EXISTS pro20x_orders (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			redeem_token TEXT UNIQUE NOT NULL,
+			cdk_code TEXT NOT NULL,
+			plan TEXT DEFAULT '',
+			country TEXT DEFAULT '',
+			credits_quantity INTEGER DEFAULT 0,
+			client_order_id TEXT UNIQUE NOT NULL,
+			task_id TEXT DEFAULT '',
+			status TEXT DEFAULT 'pending',
+			stage TEXT DEFAULT '',
+			account_email TEXT DEFAULT '',
+			error_code TEXT DEFAULT '',
+			cleanup_status TEXT DEFAULT '',
+			cost_points INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_pro20x_status ON pro20x_orders(status, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_pro20x_code ON pro20x_orders(cdk_code)`,
+
 		// 汇率缓存：一天一个货币一行（对账页人民币折算用）
 		`CREATE TABLE IF NOT EXISTS fx_rates (
 			rate_date TEXT NOT NULL,

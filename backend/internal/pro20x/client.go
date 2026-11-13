@@ -244,9 +244,10 @@ type CreateTaskRequest struct {
 	CheckoutCountry string `json:"checkoutCountry"`
 	AuthSession     any    `json:"authSessionJson,omitempty"`
 	PaymentSource   string `json:"paymentSource,omitempty"`
-	Card            *Card  `json:"card,omitempty"`
-	CardPlatformID  string `json:"cardPlatformId,omitempty"`
-	CancelAutoRenew *bool  `json:"cancelAutoRenew,omitempty"`
+	Card             *Card  `json:"card,omitempty"`
+	CardPlatformID   string `json:"cardPlatformId,omitempty"`
+	CreditsQuantity  int    `json:"creditsQuantity,omitempty"`
+	CancelAutoRenew  *bool  `json:"cancelAutoRenew,omitempty"`
 	DeletePaymentCard *bool `json:"deletePaymentCard,omitempty"`
 	DetectPlusPromo   *bool `json:"detectPlusPromo,omitempty"`
 }
