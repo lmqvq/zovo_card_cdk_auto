@@ -89,11 +89,18 @@ type envelope struct {
 	Data      json.RawMessage `json:"data"`
 }
 
-// resolveURL 拼接请求地址；poll 等字段可能返回完整 URL，直接使用。
+// resolveURL 拼接请求地址。
+// poll 字段可能返回三种形式：完整 URL、站点绝对路径（/api/v3/...）、接口相对路径（/account-check/...）。
 func (c *Client) resolveURL(path string) string {
 	p := strings.TrimSpace(path)
 	if strings.HasPrefix(p, "http://") || strings.HasPrefix(p, "https://") {
 		return p
+	}
+	// 站点绝对路径：只取 BaseURL 的 scheme+host，避免拼出 /api/v3/automate/api/v3/... 的双前缀
+	if strings.HasPrefix(p, "/api/") {
+		if u, err := url.Parse(c.cfg.BaseURL); err == nil && u.Host != "" {
+			return u.Scheme + "://" + u.Host + p
+		}
 	}
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
