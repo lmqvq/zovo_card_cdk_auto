@@ -101,6 +101,7 @@ func AdminListLocalCDKs(c *gin.Context) {
 			"agent_id":    r.AgentID,
 			"price_minor": r.PriceMinor,
 			"bound_email": r.BoundEmail,
+			"note":        r.Note,
 			"expires_at":  r.ExpiresAt,
 			"created_at":  r.CreatedAt,
 		})
@@ -119,6 +120,27 @@ func maskCode(code string) string {
 		return code
 	}
 	return code[:7] + "****" + code[len(code)-4:]
+}
+
+// AdminUpdateLocalCDKNote PUT /api/v1/admin/cdk/local/note
+// body: { code, note }
+func AdminUpdateLocalCDKNote(c *gin.Context) {
+	var body struct {
+		Code string `json:"code"`
+		Note string `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Code) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code required"})
+		return
+	}
+	if err := db.UpdateLocalCDKNote(body.Code, body.Note); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	u, _ := c.Get("username")
+	username, _ := u.(string)
+	db.WriteAudit(username, "local_cdk_note", "code="+maskCode(body.Code), c.ClientIP())
+	c.JSON(http.StatusOK, gin.H{"ok": true, "code": body.Code, "note": body.Note})
 }
 
 // AdminUpdateLocalCDKStatus PUT /api/v1/admin/cdk/local/status

@@ -136,6 +136,24 @@
             <span class="mono text-xs">{{ row.bound_email || '—' }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="备注" min-width="180">
+          <template #default="{ row }">
+            <el-popover placement="left" :width="280" trigger="click">
+              <template #reference>
+                <span class="text-xs cursor-pointer" :class="row.note ? 'text-ink' : 'text-muted'">
+                  {{ row.note || '添加备注…' }}
+                </span>
+              </template>
+              <div class="space-y-2">
+                <el-input v-model="noteDraft" size="small" placeholder="备注内容" />
+                <div class="flex justify-end gap-2">
+                  <el-button size="small" @click="noteDraft = row.note || ''">重置</el-button>
+                  <el-button size="small" type="primary" @click="saveNote(row)">保存</el-button>
+                </div>
+              </div>
+            </el-popover>
+          </template>
+        </el-table-column>
         <el-table-column label="创建" width="150">
           <template #default="{ row }">{{ row.created_at }}</template>
         </el-table-column>
@@ -191,6 +209,7 @@ const generating = ref(false)
 const resultOpen = ref(false)
 const lastCodes = ref<string[]>([])
 const lastBatch = ref('')
+const noteDraft = ref('')
 
 const planOptions = [
   { value: 'plus', label: 'Plus', hint: '直充' },
@@ -210,7 +229,7 @@ const countryOptions = [
   { value: 'SG', label: '新加坡 (SG)' },
 ]
 
-const form = ref({ plan: 'plus', count: 1, country: 'PH', valid_days: 90 })
+const form = ref({ plan: 'plus', count: 1, country: 'PH', valid_days: 0 })
 
 const planNames: Record<string, string> = {
   plus: 'Plus',
@@ -328,8 +347,25 @@ async function generate() {
   }
 }
 
-async function setStatus(code: string, status: string) {
+async function saveNote(row: any) {
   try {
+    const r = await authFetch('/api/v1/admin/cdk/local/note', {
+      method: 'PUT',
+      body: JSON.stringify({ code: row.code, note: noteDraft.value }),
+    })
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok) {
+      dialog.toast(d.error || '保存失败', 'err')
+      return
+    }
+    row.note = noteDraft.value
+    dialog.toast('备注已保存', 'ok')
+  } catch (e: any) {
+    dialog.toast(e?.message || '网络错误', 'err')
+  }
+}
+
+async function setStatus(code: string, status: string) {  try {
     const r = await authFetch('/api/v1/admin/cdk/local/status', {
       method: 'PUT',
       body: JSON.stringify({ code, status }),

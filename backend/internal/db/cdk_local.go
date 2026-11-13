@@ -37,6 +37,7 @@ type LocalCDK struct {
 	AgentID     string
 	PriceMinor  int64
 	BoundEmail  string
+	Note        string
 	ExpiresAt   string
 	CreatedAt   string
 }
@@ -249,7 +250,7 @@ func ListLocalCDKs(limit int, status, batch string) ([]LocalCDK, error) {
 	}
 	q := `SELECT code, COALESCE(code_prefix,''), COALESCE(plan,''), COALESCE(payment_country,''),
 		       COALESCE(status,''), COALESCE(batch_no,''), COALESCE(agent_id,''),
-		       COALESCE(price_minor,0), COALESCE(bound_email,''),
+		       COALESCE(price_minor,0), COALESCE(bound_email,''), COALESCE(note,''),
 		       COALESCE(expires_at,''), COALESCE(created_at,'')
 		FROM cardplatform_cdk_codes
 		WHERE COALESCE(source,'zovo') = 'local'`
@@ -274,12 +275,24 @@ func ListLocalCDKs(limit int, status, batch string) ([]LocalCDK, error) {
 	for rows.Next() {
 		var c LocalCDK
 		if err := rows.Scan(&c.Code, &c.Prefix, &c.Plan, &c.Country, &c.Status,
-			&c.BatchNo, &c.AgentID, &c.PriceMinor, &c.BoundEmail, &c.ExpiresAt, &c.CreatedAt); err != nil {
+			&c.BatchNo, &c.AgentID, &c.PriceMinor, &c.BoundEmail, &c.Note, &c.ExpiresAt, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// UpdateLocalCDKNote 修改自建码备注。
+func UpdateLocalCDKNote(code, note string) error {
+	if DB == nil {
+		return fmt.Errorf("db not ready")
+	}
+	c := normalizeCDKCode(code)
+	_, err := DB.Exec(`
+		UPDATE cardplatform_cdk_codes SET note = ?
+		WHERE code = ? AND COALESCE(source,'zovo') = 'local'`, strings.TrimSpace(note), c)
+	return err
 }
 
 // CountLocalCDKs 统计自建码数量（按状态过滤，空表示全部）。

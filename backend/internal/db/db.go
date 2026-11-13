@@ -89,6 +89,7 @@ func createTables() error {
 			agent_id TEXT DEFAULT '',
 			price_minor INTEGER DEFAULT 0,
 			bound_email TEXT DEFAULT '',
+			note TEXT DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_cp_cdk_upstream ON cardplatform_cdk_codes(upstream_id)`,
@@ -385,6 +386,7 @@ func migrateCDKLocalColumns() error {
 		{"agent_id", `ALTER TABLE cardplatform_cdk_codes ADD COLUMN agent_id TEXT DEFAULT ''`},
 		{"price_minor", `ALTER TABLE cardplatform_cdk_codes ADD COLUMN price_minor INTEGER DEFAULT 0`},
 		{"bound_email", `ALTER TABLE cardplatform_cdk_codes ADD COLUMN bound_email TEXT DEFAULT ''`},
+		{"note", `ALTER TABLE cardplatform_cdk_codes ADD COLUMN note TEXT DEFAULT ''`},
 	}
 	for _, c := range cols {
 		var n int

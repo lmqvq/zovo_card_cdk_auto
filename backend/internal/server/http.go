@@ -225,6 +225,7 @@ func setupRoutes(r *gin.Engine) {
 			admin.POST("/cdk/local/generate", handler.AdminGenerateLocalCDKs)
 			admin.GET("/cdk/local/list", handler.AdminListLocalCDKs)
 			admin.PUT("/cdk/local/status", handler.AdminUpdateLocalCDKStatus)
+			admin.PUT("/cdk/local/note", handler.AdminUpdateLocalCDKNote)
 			admin.GET("/pro20x/settings", handler.AdminGetPro20xSettings)
 			admin.PUT("/pro20x/settings", handler.AdminPutPro20xSettings)
 			admin.GET("/pro20x/test", handler.AdminTestPro20x)
