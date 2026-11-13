@@ -1148,6 +1148,10 @@ func proxyPublicJSON(c *gin.Context, status int, raw json.RawMessage) {
 
 // PublicCDKPreview POST /api/v1/public/cdk/preview
 func PublicCDKPreview(c *gin.Context) {
+	if !previewRateAllow(c.ClientIP()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "请求过于频繁，请稍后再试"})
+		return
+	}
 	var body map[string]any
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})

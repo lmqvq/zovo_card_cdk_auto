@@ -11,9 +11,10 @@ import (
 // 自建码字母表：去掉易混字符 0/O/1/I。
 const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
-// GenerateCDKCode 生成 ZC-XXXXXXXX-XXXX 格式的本地码（12 位随机，≈ 59 bit）。
+// GenerateCDKCode 生成与卡台同长度的 24 字符本地码：ZC-XXXXXXXXXX-XXXXXXXXXX。
+// 20 位随机（字母表 32），空间 32^20 ≈ 2^100，爆破不可行。
 func GenerateCDKCode() (string, error) {
-	const n = 12
+	const n = 20
 	buf := make([]byte, n)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
@@ -22,7 +23,7 @@ func GenerateCDKCode() (string, error) {
 	for i := 0; i < n; i++ {
 		chars[i] = codeAlphabet[int(buf[i])%len(codeAlphabet)]
 	}
-	return "ZC-" + string(chars[:8]) + "-" + string(chars[8:]), nil
+	return "ZC-" + string(chars[:10]) + "-" + string(chars[10:]), nil
 }
 
 // LocalCDK 是一条自建卡密。
@@ -88,7 +89,7 @@ func GenerateLocalCDKs(plan, country, batch, agent string, count int, priceMinor
 			}
 			c := LocalCDK{
 				Code:       code,
-				Prefix:     code[:11],
+				Prefix:     code[:strings.LastIndex(code, "-")],
 				Plan:       plan,
 				Country:    country,
 				BatchNo:    batch,
@@ -162,6 +163,21 @@ func ReleaseLocalCDK(code string) error {
 		SET status = 'unused'
 		WHERE code = ? AND COALESCE(source,'zovo') = 'local' AND status = 'consuming'`, c)
 	return err
+}
+
+// ResetStaleConsumingCDKs 服务启动时把残留的 consuming 码放回 unused。
+// 单机部署下重启时不可能有正在进行的兑换；多实例部署请勿调用。
+func ResetStaleConsumingCDKs() (int64, error) {
+	if DB == nil {
+		return 0, nil
+	}
+	res, err := DB.Exec(`
+		UPDATE cardplatform_cdk_codes SET status = 'unused'
+		WHERE COALESCE(source,'zovo') = 'local' AND status = 'consuming'`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // UpdateLocalCDKStatus 管理端手动改状态（禁用/启用）。

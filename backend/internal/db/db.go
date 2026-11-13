@@ -362,6 +362,10 @@ func createTables() error {
 	if err := migrateCDKLocalColumns(); err != nil {
 		return fmt.Errorf("migrate CDK local columns: %w", err)
 	}
+	// 服务启动时把上次进程残留的「兑换中」自建码放回未使用（单机部署安全）
+	if n, err := ResetStaleConsumingCDKs(); err == nil && n > 0 {
+		log.Printf("重置 %d 张残留「兑换中」的自建卡密为未使用", n)
+	}
 	if err := ensureDefaultAdmin(); err != nil {
 		return err
 	}

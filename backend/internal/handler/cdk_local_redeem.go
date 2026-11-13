@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -75,6 +76,32 @@ func localPaymentSource() (source, platformID string) {
 	}
 	platformID, _ = db.GetSetting("pro20x_card_platform_id")
 	return source, strings.TrimSpace(platformID)
+}
+
+// previewRateAllow 预览接口限速：同 IP 每分钟最多 30 次，防批量撞码。
+var (
+	previewMu   sync.Mutex
+	previewHits = map[string][]time.Time{}
+)
+
+func previewRateAllow(ip string) bool {
+	const limit = 30
+	previewMu.Lock()
+	defer previewMu.Unlock()
+	now := time.Now()
+	cut := now.Add(-time.Minute)
+	kept := previewHits[ip][:0]
+	for _, t := range previewHits[ip] {
+		if t.After(cut) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= limit {
+		previewHits[ip] = kept
+		return false
+	}
+	previewHits[ip] = append(kept, now)
+	return true
 }
 
 // handleLocalPreview 自建码预览。
