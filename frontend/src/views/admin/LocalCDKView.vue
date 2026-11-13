@@ -138,20 +138,9 @@
         </el-table-column>
         <el-table-column label="备注" min-width="180">
           <template #default="{ row }">
-            <el-popover placement="left" :width="280" trigger="click">
-              <template #reference>
-                <span class="text-xs cursor-pointer" :class="row.note ? 'text-ink' : 'text-muted'">
-                  {{ row.note || '添加备注…' }}
-                </span>
-              </template>
-              <div class="space-y-2">
-                <el-input v-model="noteDraft" size="small" placeholder="备注内容" />
-                <div class="flex justify-end gap-2">
-                  <el-button size="small" @click="noteDraft = row.note || ''">重置</el-button>
-                  <el-button size="small" type="primary" @click="saveNote(row)">保存</el-button>
-                </div>
-              </div>
-            </el-popover>
+            <span class="text-xs cursor-pointer" :class="row.note ? 'text-ink' : 'text-muted'" @click="openNote(row)">
+              {{ row.note || '添加备注…' }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column label="创建" width="150">
@@ -178,6 +167,23 @@
         </el-table-column>
       </el-table>
     </div>
+
+    <!-- 备注编辑 -->
+    <el-dialog v-model="noteOpen" :title="`备注 ${noteTarget?.batch_no || ''}`" width="520px">
+      <p class="text-sm text-muted mb-3">为该 CDK 填写备注（留空并确定可清空）</p>
+      <el-input
+        v-model="noteDraft"
+        type="textarea"
+        :rows="2"
+        maxlength="200"
+        show-word-limit
+        placeholder="最多 200 字，例如批次/客户/用途"
+      />
+      <template #footer>
+        <el-button @click="noteOpen = false">取消</el-button>
+        <el-button type="primary" @click="saveNote">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 生成结果 -->
     <el-dialog v-model="resultOpen" title="生成结果" width="620px">
@@ -210,6 +216,14 @@ const resultOpen = ref(false)
 const lastCodes = ref<string[]>([])
 const lastBatch = ref('')
 const noteDraft = ref('')
+const noteOpen = ref(false)
+const noteTarget = ref<any>(null)
+
+function openNote(row: any) {
+  noteTarget.value = row
+  noteDraft.value = row.note || ''
+  noteOpen.value = true
+}
 
 const planOptions = [
   { value: 'plus', label: 'Plus', hint: '直充' },
@@ -347,7 +361,9 @@ async function generate() {
   }
 }
 
-async function saveNote(row: any) {
+async function saveNote() {
+  const row = noteTarget.value
+  if (!row) return
   try {
     const r = await authFetch('/api/v1/admin/cdk/local/note', {
       method: 'PUT',
@@ -359,6 +375,7 @@ async function saveNote(row: any) {
       return
     }
     row.note = noteDraft.value
+    noteOpen.value = false
     dialog.toast('备注已保存', 'ok')
   } catch (e: any) {
     dialog.toast(e?.message || '网络错误', 'err')
