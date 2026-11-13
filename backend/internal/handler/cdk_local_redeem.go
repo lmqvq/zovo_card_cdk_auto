@@ -95,6 +95,9 @@ func handleLocalPreview(c *gin.Context, code string) {
 	switch strings.ToLower(strings.TrimSpace(cd.Status)) {
 	case "unused", "":
 		// 可兑换
+	case "consuming":
+		c.JSON(http.StatusConflict, gin.H{"error": "卡密正在兑换中，请稍候"})
+		return
 	case "consumed":
 		c.JSON(http.StatusBadRequest, gin.H{"error": "卡密已使用"})
 		return
@@ -255,6 +258,32 @@ func handleLocalRedeem(c *gin.Context, body map[string]any) {
 		return
 	}
 
+	// 原子抢占：先把会话从 preflight 推进到 redeeming，再把卡密从 unused 推进到 consuming。
+	// 两个条件 UPDATE 保证同一会话/同一张码只会被一个请求拿到，杜绝二次兑换。
+	claimedOrder, err := db.ClaimPro20xOrder(token)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "锁定兑换会话失败"})
+		return
+	}
+	if !claimedOrder {
+		c.JSON(http.StatusConflict, gin.H{"error": "兑换正在处理中，请勿重复提交"})
+		return
+	}
+	rollbackOrder := func() { _ = db.ReleasePro20xOrder(token) }
+
+	claimedCDK, err := db.ClaimLocalCDK(order.CDKCode)
+	if err != nil {
+		rollbackOrder()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "锁定卡密失败"})
+		return
+	}
+	if !claimedCDK {
+		rollbackOrder()
+		c.JSON(http.StatusConflict, gin.H{"error": "卡密已被使用或正在兑换"})
+		return
+	}
+	releaseCDK := func() { _ = db.ReleaseLocalCDK(order.CDKCode) }
+
 	source, platformID := localPaymentSource()
 	req, err := pro20x.BuildCreateRequest(pro20x.BuildOptions{
 		ClientOrderID:   order.ClientOrderID,
@@ -266,6 +295,8 @@ func handleLocalRedeem(c *gin.Context, body map[string]any) {
 		CardPlatformID:  platformID,
 	})
 	if err != nil {
+		releaseCDK()
+		rollbackOrder()
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -275,16 +306,19 @@ func handleLocalRedeem(c *gin.Context, body map[string]any) {
 	defer cancel()
 	task, err := cli.CreateTask(ctx, *req)
 	if err != nil {
+		releaseCDK()
+		rollbackOrder()
 		log.Printf("[local-cdk] create task failed order=%d: %v", order.ID, err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "提交充值任务失败: " + err.Error()})
 		return
 	}
 
+	// 任务已受理：卡密落成已使用，会话进入 running
+	_ = db.ConsumeLocalCDK(order.CDKCode, order.AccountEmail)
 	order.TaskID = task.ID
 	order.Status = localStatusRunning
 	order.Stage = task.Status
 	_ = db.UpdatePro20xOrder(*order)
-	_ = db.MarkLocalCDKUsed(order.CDKCode, order.AccountEmail)
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":      task.ID,

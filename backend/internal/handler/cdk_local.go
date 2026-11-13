@@ -92,7 +92,7 @@ func AdminListLocalCDKs(c *gin.Context) {
 	out := make([]gin.H, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, gin.H{
-			"code":        maskCode(r.Code),
+			"code":        r.Code,
 			"code_prefix": r.Prefix,
 			"plan":        r.Plan,
 			"country":     r.Country,
@@ -119,6 +119,34 @@ func maskCode(code string) string {
 		return code
 	}
 	return code[:7] + "****" + code[len(code)-4:]
+}
+
+// AdminUpdateLocalCDKStatus PUT /api/v1/admin/cdk/local/status
+// body: { code, status }  status: unused / disabled / consumed
+func AdminUpdateLocalCDKStatus(c *gin.Context) {
+	var body struct {
+		Code   string `json:"code"`
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Code) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code required"})
+		return
+	}
+	st := strings.ToLower(strings.TrimSpace(body.Status))
+	switch st {
+	case "unused", "disabled", "consumed":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status 只支持 unused / disabled / consumed"})
+		return
+	}
+	if err := db.UpdateLocalCDKStatus(body.Code, st); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	u, _ := c.Get("username")
+	username, _ := u.(string)
+	db.WriteAudit(username, "local_cdk_status", "code="+maskCode(body.Code)+" status="+st, c.ClientIP())
+	c.JSON(http.StatusOK, gin.H{"ok": true, "code": body.Code, "status": st})
 }
 
 func nowCompact() string {

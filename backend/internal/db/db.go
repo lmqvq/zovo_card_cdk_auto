@@ -1098,7 +1098,8 @@ func cardplatformStoredWhere(plan, q, status string) (where string, args []any) 
 	plan = strings.TrimSpace(plan)
 	q = strings.TrimSpace(q)
 	status = strings.TrimSpace(strings.ToLower(status))
-	where = ` WHERE 1=1`
+	// CDK 卡密页只管理卡台码；自建码（source=local）在「自建卡密」页单独管理
+	where = ` WHERE COALESCE(source,'zovo') = 'zovo'`
 	if plan != "" {
 		where += ` AND plan = ?`
 		args = append(args, plan)

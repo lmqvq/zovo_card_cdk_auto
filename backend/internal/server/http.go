@@ -224,6 +224,7 @@ func setupRoutes(r *gin.Engine) {
 			// 自建卡密（走 Pro20x 通道）
 			admin.POST("/cdk/local/generate", handler.AdminGenerateLocalCDKs)
 			admin.GET("/cdk/local/list", handler.AdminListLocalCDKs)
+			admin.PUT("/cdk/local/status", handler.AdminUpdateLocalCDKStatus)
 			admin.GET("/pro20x/settings", handler.AdminGetPro20xSettings)
 			admin.PUT("/pro20x/settings", handler.AdminPutPro20xSettings)
 			admin.GET("/pro20x/test", handler.AdminTestPro20x)

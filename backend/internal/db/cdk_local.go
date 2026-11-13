@@ -113,6 +113,69 @@ func GenerateLocalCDKs(plan, country, batch, agent string, count int, priceMinor
 	return out, nil
 }
 
+// 自建码兑换时的原子状态流转：
+//
+//	unused/''  --ClaimLocalCDK-->  consuming  --ConsumeLocalCDK-->  consumed
+//	                                   └------ReleaseLocalCDK----->  unused
+//
+// Claim 用条件 UPDATE 实现抢占，保证同一张码只会被一个请求拿到。
+
+// ClaimLocalCDK 原子占用卡密；false 表示已被别人占用或已使用。
+func ClaimLocalCDK(code string) (bool, error) {
+	if DB == nil {
+		return false, fmt.Errorf("db not ready")
+	}
+	c := normalizeCDKCode(code)
+	res, err := DB.Exec(`
+		UPDATE cardplatform_cdk_codes
+		SET status = 'consuming'
+		WHERE code = ? AND COALESCE(source,'zovo') = 'local'
+		  AND TRIM(COALESCE(status,'')) IN ('', 'unused')`, c)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
+// ConsumeLocalCDK 兑换成功：consuming → consumed，并记录绑定邮箱。
+func ConsumeLocalCDK(code, email string) error {
+	if DB == nil {
+		return fmt.Errorf("db not ready")
+	}
+	c := normalizeCDKCode(code)
+	_, err := DB.Exec(`
+		UPDATE cardplatform_cdk_codes
+		SET status = 'consumed', bound_email = ?
+		WHERE code = ? AND COALESCE(source,'zovo') = 'local'`, strings.TrimSpace(email), c)
+	return err
+}
+
+// ReleaseLocalCDK 兑换失败：consuming → unused，允许重试。
+func ReleaseLocalCDK(code string) error {
+	if DB == nil {
+		return fmt.Errorf("db not ready")
+	}
+	c := normalizeCDKCode(code)
+	_, err := DB.Exec(`
+		UPDATE cardplatform_cdk_codes
+		SET status = 'unused'
+		WHERE code = ? AND COALESCE(source,'zovo') = 'local' AND status = 'consuming'`, c)
+	return err
+}
+
+// UpdateLocalCDKStatus 管理端手动改状态（禁用/启用）。
+func UpdateLocalCDKStatus(code, status string) error {
+	if DB == nil {
+		return fmt.Errorf("db not ready")
+	}
+	c := normalizeCDKCode(code)
+	_, err := DB.Exec(`
+		UPDATE cardplatform_cdk_codes SET status = ?
+		WHERE code = ? AND COALESCE(source,'zovo') = 'local'`, strings.TrimSpace(status), c)
+	return err
+}
+
 // LookupLocalCDK 按完整码查自建码；不存在返回 ok=false。
 func LookupLocalCDK(code string) (*LocalCDK, bool, error) {
 	if DB == nil {

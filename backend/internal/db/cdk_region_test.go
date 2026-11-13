@@ -25,7 +25,9 @@ func TestCDKRegionMigrationAndCache(t *testing.T) {
 	// leave unknown rows NULL until the authoritative current page is read.
 	_, err = conn.Exec(`CREATE TABLE cardplatform_cdk_codes(upstream_id INTEGER,code TEXT UNIQUE NOT NULL,code_prefix TEXT,plan TEXT,fee_amount_minor INTEGER,status TEXT,created_at DATETIME)`)
 	check(err)
-	_, err = conn.Exec(`INSERT INTO cardplatform_cdk_codes VALUES(1,'ZC-SYNTHETIC-OLD-CODE','ZC-SYNTHETIC','plus',15,'unused',CURRENT_TIMESTAMP)`)
+	// 模拟老库升级：补 source / expires_at 等列，旧行默认 source='zovo'
+	check(migrateCDKLocalColumns())
+	_, err = conn.Exec(`INSERT INTO cardplatform_cdk_codes(upstream_id, code, code_prefix, plan, fee_amount_minor, status, created_at) VALUES(1,'ZC-SYNTHETIC-OLD-CODE','ZC-SYNTHETIC','plus',15,'unused',CURRENT_TIMESTAMP)`)
 	check(err)
 	check(migrateCardplatformCDKRegionCol())
 	check(migrateCardplatformCDKRegionCol())
