@@ -273,14 +273,22 @@ func handleLocalPreflight(c *gin.Context, body map[string]any) {
 	order.AccountEmail = res.Email
 	_ = db.UpdatePro20xOrder(*order)
 
+	// 同时平铺卡台字段（前端 applyAccountFromPreflight 读顶层 email/currentPlan/subscription_has_active）
 	c.JSON(http.StatusOK, gin.H{
-		"preflight_token": token,
+		"preflight_token":         token,
+		"email":                   res.Email,
+		"currentPlan":             acc.PlanLabel,
+		"current_plan":            acc.PlanLabel,
+		"plan":                    acc.PlanLabel,
+		"subscription_has_active": acc.HasActiveSubscription,
+		"subscription_active_until": "",
+		"can_purchase_at":           "",
 		"account": gin.H{
+			"email":                   res.Email,
 			"plan_type":               strings.ToLower(acc.Tier),
 			"plan_label":              acc.PlanLabel,
 			"has_active_subscription": acc.HasActiveSubscription,
 			"billing_currency":        acc.BillingCurrency,
-			"email":                   res.Email,
 		},
 		"channel": "local",
 	})
@@ -377,7 +385,9 @@ func handleLocalRedeem(c *gin.Context, body map[string]any) {
 	}
 
 	// 任务已受理：卡密落成已使用，会话进入 running
-	_ = db.ConsumeLocalCDK(order.CDKCode, order.AccountEmail)
+	if err := db.ConsumeLocalCDK(order.CDKCode, order.AccountEmail); err != nil {
+		log.Printf("[local-cdk] 标记卡密已用失败 code=%s order=%d: %v", order.CDKCode, order.ID, err)
+	}
 	order.TaskID = task.ID
 	order.Status = localStatusRunning
 	order.Stage = task.Status
@@ -391,6 +401,32 @@ func handleLocalRedeem(c *gin.Context, body map[string]any) {
 	})
 }
 
+// resultSeen 记录每个兑换令牌最近一次拉取 Pro20x 的时间，
+// 前端轮询间隔 2~3 秒，这里做 3 秒节流，避免把 Pro20x 打到限流。
+var (
+	resultMu   sync.Mutex
+	resultSeen = map[string]time.Time{}
+)
+
+func shouldRefreshResult(token string) bool {
+	const minGap = 3 * time.Second
+	resultMu.Lock()
+	defer resultMu.Unlock()
+	now := time.Now()
+	if last, ok := resultSeen[token]; ok && now.Sub(last) < minGap {
+		return false
+	}
+	resultSeen[token] = now
+	if len(resultSeen) > 2000 {
+		for k, v := range resultSeen {
+			if now.Sub(v) > time.Minute {
+				delete(resultSeen, k)
+			}
+		}
+	}
+	return true
+}
+
 // handleLocalResult 自建码进度查询。
 func handleLocalResult(c *gin.Context, token string) {
 	order, err := db.GetPro20xOrderByToken(token)
@@ -402,10 +438,13 @@ func handleLocalResult(c *gin.Context, token string) {
 	events := []gin.H{
 		{"step": "accept", "message": "任务已提交", "created_at": order.CreatedAt},
 	}
-	if order.TaskID != "" {
+	if order.TaskID != "" && shouldRefreshResult(token) {
 		if st, sg, ok := refreshLocalOrder(c, order); ok {
 			status, stage = st, sg
 		}
+		events = append(events, gin.H{"step": "pay", "message": "支付处理中", "created_at": order.UpdatedAt})
+	} else if order.TaskID != "" {
+		status, stage = mapLocalStatus(order.Status, order.Stage)
 		events = append(events, gin.H{"step": "pay", "message": "支付处理中", "created_at": order.UpdatedAt})
 	}
 	if status == "completed" {

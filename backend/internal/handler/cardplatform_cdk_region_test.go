@@ -30,7 +30,7 @@ func TestCDKListRegionRoundTripAndPageRefresh(t *testing.T) {
 	}
 	for _, q := range []string{
 		`CREATE TABLE site_settings(key TEXT PRIMARY KEY,value TEXT,updated_at DATETIME)`,
-		`CREATE TABLE cardplatform_cdk_codes(upstream_id INTEGER,code TEXT UNIQUE NOT NULL,code_prefix TEXT,plan TEXT,fee_amount_minor INTEGER,status TEXT,payment_country TEXT,created_at DATETIME)`,
+		`CREATE TABLE cardplatform_cdk_codes(upstream_id INTEGER,code TEXT UNIQUE NOT NULL,code_prefix TEXT,plan TEXT,fee_amount_minor INTEGER,status TEXT,payment_country TEXT,source TEXT DEFAULT 'zovo',created_at DATETIME)`,
 		`CREATE TABLE cardplatform_cdk_notes(upstream_id INTEGER PRIMARY KEY,note TEXT)`,
 	} {
 		_, e := conn.Exec(q)
