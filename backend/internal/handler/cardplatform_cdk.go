@@ -1154,6 +1154,11 @@ func PublicCDKPreview(c *gin.Context) {
 		return
 	}
 	code := str(body["code"])
+	// 自建码（local）走 Pro20x 通道，不转发卡台
+	if isLocalCDKCode(code) {
+		handleLocalPreview(c, code)
+		return
+	}
 	cli := cardplatform.NewFromSettings()
 	st, raw, err := cli.Preview(c.Request.Context(), code, deviceFrom(c))
 	if err != nil {
@@ -1178,6 +1183,10 @@ func PublicCDKPreflight(c *gin.Context) {
 	var body map[string]any
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	if isLocalToken(str(body["redemption_token"])) {
+		handleLocalPreflight(c, body)
 		return
 	}
 	cli := cardplatform.NewFromSettings()
@@ -1218,6 +1227,10 @@ func PublicCDKRedeem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
+	if isLocalToken(str(body["redemption_token"])) {
+		handleLocalRedeem(c, body)
+		return
+	}
 	// 有选卡配置就向卡台声明 strict，避免被卡台自己的 537872/星链级联盖过。
 	injectRedeemCardPolicy(body)
 	// 本站坏卡黑名单 → 本单排除这些卡：CDK 走 CDK 自己的选卡规则。实时读黑名单、纯选卡维度
@@ -1241,6 +1254,10 @@ func PublicCDKResult(c *gin.Context) {
 	token := strings.TrimSpace(c.Query("token"))
 	if token == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "token required"})
+		return
+	}
+	if isLocalToken(token) {
+		handleLocalResult(c, token)
 		return
 	}
 	cli := cardplatform.NewFromSettings()
@@ -1272,6 +1289,15 @@ func PublicCDKResultByCode(c *gin.Context) {
 	}
 	if code == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "code required"})
+		return
+	}
+	if isLocalCDKCode(code) {
+		o, err := db.GetPro20xOrderByCDK(code)
+		if err != nil || o == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "该卡密还没有兑换记录"})
+			return
+		}
+		handleLocalResult(c, o.RedeemToken)
 		return
 	}
 	bind, err := db.GetBindingByCDK(code)
