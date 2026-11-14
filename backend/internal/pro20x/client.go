@@ -292,33 +292,70 @@ type Task struct {
 	Cleanup       json.RawMessage `json:"gptPaymentMethodCleanup"`
 }
 
+// unwrapTask 从多种响应外壳里取出任务对象。
+// 兼容：顶层 Task / {task:{...}} / {job:{...}} / {data:{task:{...}}} / {taskId} / {id}
+func unwrapTask(raw []byte) (*Task, error) {
+	var direct Task
+	if err := json.Unmarshal(raw, &direct); err == nil && direct.ID != "" {
+		return &direct, nil
+	}
+	var env struct {
+		Task   Task   `json:"task"`
+		Job    Task   `json:"job"`
+		TaskID string `json:"taskId"`
+		ID     string `json:"id"`
+		Data   struct {
+			Task   Task   `json:"task"`
+			Job    Task   `json:"job"`
+			TaskID string `json:"taskId"`
+			ID     string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, fmt.Errorf("pro20x 返回非 JSON")
+	}
+	for _, cand := range []*Task{&env.Task, &env.Job, &env.Data.Task, &env.Data.Job} {
+		if cand.ID != "" {
+			return cand, nil
+		}
+	}
+	for _, id := range []string{env.TaskID, env.ID, env.Data.TaskID, env.Data.ID} {
+		if strings.TrimSpace(id) != "" {
+			return &Task{ID: strings.TrimSpace(id)}, nil
+		}
+	}
+	return nil, fmt.Errorf("pro20x 响应里没有任务 ID")
+}
+
 // CreateTask 提交充值任务。
 func (c *Client) CreateTask(ctx context.Context, req CreateTaskRequest) (*Task, error) {
 	_, raw, err := c.do(ctx, http.MethodPost, "/tasks", req, req.ClientOrderID)
 	if err != nil {
 		return nil, err
 	}
-	var t Task
-	if err := json.Unmarshal(raw, &t); err != nil {
-		// 有些返回把任务包在 job 里
-		var env struct {
-			Job Task `json:"job"`
-		}
-		if json.Unmarshal(raw, &env) == nil && env.Job.ID != "" {
-			return &env.Job, nil
-		}
-		return nil, fmt.Errorf("pro20x /tasks 返回非 JSON")
+	return unwrapTask(raw)
+}
+
+// GetTaskByClientOrderID 按幂等订单号查任务（用于任务 ID 丢失后的补偿查询）。
+func (c *Client) GetTaskByClientOrderID(ctx context.Context, clientOrderID string) (*Task, error) {
+	if strings.TrimSpace(clientOrderID) == "" {
+		return nil, fmt.Errorf("clientOrderId 为空")
 	}
-	if t.ID == "" {
-		var env struct {
-			Job Task `json:"job"`
-		}
-		if json.Unmarshal(raw, &env) == nil && env.Job.ID != "" {
-			return &env.Job, nil
-		}
-		return nil, fmt.Errorf("pro20x /tasks 未返回任务 ID")
+	path := "/tasks?clientOrderId=" + url.QueryEscape(strings.TrimSpace(clientOrderID))
+	_, raw, err := c.do(ctx, http.MethodGet, path, nil, "")
+	if err != nil {
+		return nil, err
 	}
-	return &t, nil
+	var env struct {
+		Tasks []Task `json:"tasks"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, fmt.Errorf("pro20x /tasks 列表返回非 JSON")
+	}
+	if len(env.Tasks) == 0 {
+		return nil, nil
+	}
+	return &env.Tasks[0], nil
 }
 
 // GetTask 查询任务详情。
@@ -327,11 +364,7 @@ func (c *Client) GetTask(ctx context.Context, id string) (*Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	var t Task
-	if err := json.Unmarshal(raw, &t); err != nil {
-		return nil, fmt.Errorf("pro20x /tasks/{id} 返回非 JSON")
-	}
-	return &t, nil
+	return unwrapTask(raw)
 }
 
 // CancelTask 取消任务（仅支付提交前）。

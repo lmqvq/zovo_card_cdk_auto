@@ -438,12 +438,12 @@ func handleLocalResult(c *gin.Context, token string) {
 	events := []gin.H{
 		{"step": "accept", "message": "任务已提交", "created_at": order.CreatedAt},
 	}
-	if order.TaskID != "" && shouldRefreshResult(token) {
+	if (order.TaskID != "" || order.ClientOrderID != "") && shouldRefreshResult(token) {
 		if st, sg, ok := refreshLocalOrder(c, order); ok {
 			status, stage = st, sg
 		}
 		events = append(events, gin.H{"step": "pay", "message": "支付处理中", "created_at": order.UpdatedAt})
-	} else if order.TaskID != "" {
+	} else if order.TaskID != "" || order.ClientOrderID != "" {
 		status, stage = mapLocalStatus(order.Status, order.Stage)
 		events = append(events, gin.H{"step": "pay", "message": "支付处理中", "created_at": order.UpdatedAt})
 	}
@@ -463,12 +463,25 @@ func handleLocalResult(c *gin.Context, token string) {
 }
 
 // refreshLocalOrder 主动拉一次任务状态并回写；返回映射后的 status/stage。
+// 若本地没记住 task_id（早期提交解析失败），按 clientOrderId 兜底找回。
 func refreshLocalOrder(c *gin.Context, order *db.Pro20xOrder) (string, string, bool) {
 	cli := pro20x.NewFromSettings()
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
-	task, err := cli.GetTask(ctx, order.TaskID)
-	if err != nil {
+
+	var task *pro20x.Task
+	var err error
+	if strings.TrimSpace(order.TaskID) != "" {
+		task, err = cli.GetTask(ctx, order.TaskID)
+	} else if strings.TrimSpace(order.ClientOrderID) != "" {
+		task, err = cli.GetTaskByClientOrderID(ctx, order.ClientOrderID)
+		if err == nil && task != nil {
+			order.TaskID = task.ID
+		}
+	} else {
+		return "", "", false
+	}
+	if err != nil || task == nil {
 		return "", "", false
 	}
 	order.Status = task.Status
