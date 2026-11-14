@@ -262,12 +262,16 @@ func (c *Client) Refresh(s *Session) error {
 		"User-Agent": defaultUA,
 		"Referer":    "https://chatgpt.com/",
 	}
-	st, raw, err := c.do(fhttp.MethodGet, c.base+"/api/auth/session", headers, nil, sessionTokenCookies(s.SessionToken))
+	// 必须带 ?refresh=true：NextAuth 在不带该参数时直接返回缓存里的 accessToken，
+	// 而 Checkout / 订阅激活会轮换 AT，继续拿旧 AT 调 backend-api 只会 401。
+	st, raw, err := c.do(fhttp.MethodGet, c.base+"/api/auth/session?refresh=true&reason=token_expired", headers, nil, sessionTokenCookies(s.SessionToken))
 	if err != nil {
 		return err
 	}
 	if st != 200 {
-		return fmt.Errorf("刷新 session 失败 HTTP %d", st)
+		// 带状态码返回，上层才能区分「Cloudflare 拦截」与「凭证真失效」，
+		// 不再把一次 403 当成 token_invalid。
+		return &APIError{Status: st, Body: snippet(raw)}
 	}
 	var data map[string]any
 	if json.Unmarshal(raw, &data) != nil {
