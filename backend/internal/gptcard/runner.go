@@ -29,6 +29,9 @@ const (
 	settingSince = "card_delete_since"
 	// settingProxy 出口代理，如 http://user:pass@host:port（机房 IP 直连会被 Cloudflare 拦）
 	settingProxy = "card_delete_proxy"
+	// settingForceRefresh 删卡前是否强制用 ?refresh=true 换新 accessToken；
+	// 默认开（"1"），设为 "0" 即回退到「只有缺 AT 才刷新」的旧行为。
+	settingForceRefresh = "card_delete_force_refresh"
 )
 
 const (
@@ -186,12 +189,40 @@ func RunJob(jobID int64) {
 		return
 	}
 
-	if sess.AccessToken == "" {
-		if err := cli.Refresh(sess); err != nil {
-			job.SessionState = "invalid"
-			job.SessionCheckedAt = nowString()
-			fail(db.CardDeleteFailed, "token_invalid", 0)
-			return
+	// 支付 / 订阅激活会轮换 accessToken，库里存的 AT 往往已经作废，
+	// 所以进任务先强制换一次新 AT，并记录「有没有真的换出新的一枚」：
+	//   atRotated=true  → 拿到新 AT，链路继续；
+	//   atRotated=false → refresh 只拿回同一枚旧 AT，说明 sessionToken 已被轮换，
+	//                     后面若列卡 401 就直接标 need_relogin，不再空转重试。
+	atRotated := false
+	probed := false
+	if settingStr(settingForceRefresh, "1") != "0" || sess.AccessToken == "" {
+		probed = true
+		changed, rerr := cli.RefreshEx(sess)
+		if rerr != nil {
+			if apiErr, ok := rerr.(*APIError); ok && apiErr.Cloudflare() {
+				// 出口被 Cloudflare 拦，与凭证无关
+				backoff(job, "cf_blocked")
+				return
+			}
+			if sess.AccessToken == "" {
+				// 没有旧 AT 可以退，只能判定凭证失效
+				job.SessionState = "invalid"
+				job.SessionCheckedAt = nowString()
+				fail(db.CardDeleteFailed, "token_invalid", 0)
+				return
+			}
+			// 手里还有旧 AT：降级用它试一次，别把一次刷新失败当成凭证失效
+			if apiErr, ok := rerr.(*APIError); ok && apiErr.Unauthorized() {
+				job.SessionState = "invalid"
+				job.SessionCheckedAt = nowString()
+			}
+			log.Printf("[card-delete] order=%d 刷新 AT 失败，降级用旧 AT 继续: %v", job.OrderID, rerr)
+		} else {
+			atRotated = changed
+			if !changed {
+				log.Printf("[card-delete] order=%d refresh 未换出新 AT（sessionToken 可能已被轮换），先用旧 AT 试探一次", job.OrderID)
+			}
 		}
 	}
 
@@ -202,7 +233,9 @@ func RunJob(jobID int64) {
 	cards, err := cli.List(sess)
 	if err != nil {
 		if apiErr, ok := err.(*APIError); ok && apiErr.Unauthorized() {
-			if rerr := cli.Refresh(sess); rerr == nil {
+			if changed, rerr := cli.RefreshEx(sess); rerr == nil {
+				probed = true
+				atRotated = atRotated || changed
 				waitRate()
 				cards, err = cli.List(sess)
 			}
@@ -218,6 +251,13 @@ func RunJob(jobID int64) {
 			if apiErr.Unauthorized() {
 				job.SessionState = "invalid"
 				job.SessionCheckedAt = nowString()
+				if probed && !atRotated {
+					// refresh 拿不回新 AT、列卡又 401：凭证已不可恢复。
+					// 标 need_relogin 并终止，避免反复打同一个账号。
+					fail(db.CardDeleteSkipped, "need_relogin", apiErr.Status)
+					log.Printf("[card-delete] order=%d 判定需重新登录（refresh 未换出新 AT 且 401）", job.OrderID)
+					return
+				}
 				fail(db.CardDeleteFailed, "token_invalid", apiErr.Status)
 				return
 			}

@@ -254,9 +254,20 @@ func (c *Client) SetDefault(s *Session, pmID string, opt SetDefaultOptions) (int
 
 // Refresh 用 sessionToken 换一个新的 accessToken。
 func (c *Client) Refresh(s *Session) error {
+	_, err := c.RefreshEx(s)
+	return err
+}
+
+// RefreshEx 与 Refresh 完全相同，但额外返回 accessToken 是否真的换成了新的一枚。
+//
+// changed=false 表示 NextAuth 认为这份会话"无需刷新"，拿回的还是同一枚 token。
+// 实测：支付/订阅激活后旧 AT 可能被服务端吊销（exp 在未来却返回 token_expired），
+// 此时 refresh 若拿不回新 token，就说明 sessionToken 已被轮换，调用方不应再用旧 AT 空转。
+func (c *Client) RefreshEx(s *Session) (bool, error) {
 	if s.SessionToken == "" {
-		return fmt.Errorf("缺少 sessionToken")
+		return false, fmt.Errorf("缺少 sessionToken")
 	}
+	oldToken := s.AccessToken
 	headers := map[string]string{
 		"Accept":     "application/json",
 		"User-Agent": defaultUA,
@@ -266,26 +277,26 @@ func (c *Client) Refresh(s *Session) error {
 	// 而 Checkout / 订阅激活会轮换 AT，继续拿旧 AT 调 backend-api 只会 401。
 	st, raw, err := c.do(fhttp.MethodGet, c.base+"/api/auth/session?refresh=true&reason=token_expired", headers, nil, sessionTokenCookies(s.SessionToken))
 	if err != nil {
-		return err
+		return false, err
 	}
 	if st != 200 {
 		// 带状态码返回，上层才能区分「Cloudflare 拦截」与「凭证真失效」，
 		// 不再把一次 403 当成 token_invalid。
-		return &APIError{Status: st, Body: snippet(raw)}
+		return false, &APIError{Status: st, Body: snippet(raw)}
 	}
 	var data map[string]any
 	if json.Unmarshal(raw, &data) != nil {
-		return fmt.Errorf("刷新 session 返回非 JSON")
+		return false, fmt.Errorf("刷新 session 返回非 JSON")
 	}
 	tok := firstString(data["accessToken"], data["access_token"])
 	if tok == "" {
-		return fmt.Errorf("刷新 session 未返回 accessToken")
+		return false, fmt.Errorf("刷新 session 未返回 accessToken")
 	}
 	s.AccessToken = tok
 	if s.AccountID == "" {
 		s.AccountID = accountIDFromJWT(tok)
 	}
-	return nil
+	return tok != oldToken, nil
 }
 
 func sessionTokenCookies(token string) []*fhttp.Cookie {
