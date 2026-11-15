@@ -26,30 +26,43 @@ const (
 )
 
 var (
-	clientOnce sync.Once
-	client     tls_client.HttpClient
-	clientErr  error
+	clientMu sync.Mutex
+	clients  = map[string]tls_client.HttpClient{}
 )
 
-func getClient() (tls_client.HttpClient, error) {
-	clientOnce.Do(func() {
-		opts := []tls_client.HttpClientOption{
-			tls_client.WithTimeoutSeconds(30),
-			tls_client.WithClientProfile(profiles.Chrome_131),
-			tls_client.WithForceHttp1(),
-			tls_client.WithNotFollowRedirects(),
-		}
-		client, clientErr = tls_client.NewHttpClient(tls_client.NewNoopLogger(), opts...)
-	})
-	return client, clientErr
+// getClient 返回按出口代理缓存的客户端。
+// proxyURL 为空时与旧实现完全一致（直连），因此不影响任何未传代理的调用方。
+func getClient(proxyURL string) (tls_client.HttpClient, error) {
+	proxyURL = strings.TrimSpace(proxyURL)
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	if c, ok := clients[proxyURL]; ok {
+		return c, nil
+	}
+	opts := []tls_client.HttpClientOption{
+		tls_client.WithTimeoutSeconds(30),
+		tls_client.WithClientProfile(profiles.Chrome_131),
+		tls_client.WithForceHttp1(),
+		tls_client.WithNotFollowRedirects(),
+	}
+	if proxyURL != "" {
+		// 机房 IP 直连 chatgpt.com 会被 Cloudflare 无条件拦，必须走住宅/ISP 代理
+		opts = append(opts, tls_client.WithProxyUrl(proxyURL))
+	}
+	c, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), opts...)
+	if err != nil {
+		return nil, err
+	}
+	clients[proxyURL] = c
+	return c, nil
 }
 
-func request(method, rawURL string, headers map[string]string) (int, []byte, error) {
-	return requestWithCookies(method, rawURL, headers, nil)
+func request(method, rawURL string, headers map[string]string, proxyURL string) (int, []byte, error) {
+	return requestWithCookies(method, rawURL, headers, nil, proxyURL)
 }
 
-func requestWithCookies(method, rawURL string, headers map[string]string, cookies []*fhttp.Cookie) (int, []byte, error) {
-	c, err := getClient()
+func requestWithCookies(method, rawURL string, headers map[string]string, cookies []*fhttp.Cookie, proxyURL string) (int, []byte, error) {
+	c, err := getClient(proxyURL)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -132,13 +145,13 @@ func sessionTokenCookies(token string) []*fhttp.Cookie {
 }
 
 // refreshAccessToken 用 sessionToken 换取新 accessToken。
-func refreshAccessToken(sessionToken string) (string, error) {
+func refreshAccessToken(sessionToken, proxyURL string) (string, error) {
 	cookies := sessionTokenCookies(sessionToken)
 	st, body, err := requestWithCookies(fhttp.MethodGet, sessionAuthURL, map[string]string{
 		"Accept":     "application/json",
 		"User-Agent": ua,
 		"Referer":    "https://chatgpt.com/",
-	}, cookies)
+	}, cookies, proxyURL)
 	if err != nil {
 		return "", fmt.Errorf("刷新 session 失败: %v", err)
 	}
@@ -212,6 +225,11 @@ type Result struct {
 // Check 对齐小助手 gptCheck：订阅 + invoices（含 hosted_invoice_url / invoice_pdf）。
 // 若 accessToken 已过期（403/401），自动用 sessionToken 刷新后重试一次。
 func Check(tokenInput string) (*Result, error) {
+	return CheckWithProxy(tokenInput, "")
+}
+
+// CheckWithProxy 与 Check 相同，但所有请求走指定出口代理（proxyURL 为空时行为与 Check 一致）。
+func CheckWithProxy(tokenInput, proxyURL string) (*Result, error) {
 	accessToken, err := ParseAccessToken(tokenInput)
 	if err != nil {
 		return nil, err
@@ -223,7 +241,7 @@ func Check(tokenInput string) (*Result, error) {
 		"User-Agent":    ua,
 		"Referer":       "https://chatgpt.com/",
 	}
-	st, body, err := request(http.MethodGet, checkV4URL, checkHeaders)
+	st, body, err := request(http.MethodGet, checkV4URL, checkHeaders, proxyURL)
 	if err != nil {
 		return nil, fmt.Errorf("请求 ChatGPT 失败: %v", err)
 	}
@@ -232,10 +250,10 @@ func Check(tokenInput string) (*Result, error) {
 	if st == 401 || st == 403 {
 		sessionToken := parseSessionToken(tokenInput)
 		if sessionToken != "" {
-			if fresh, rerr := refreshAccessToken(sessionToken); rerr == nil && fresh != "" {
+			if fresh, rerr := refreshAccessToken(sessionToken, proxyURL); rerr == nil && fresh != "" {
 				accessToken = fresh
 				checkHeaders["Authorization"] = "Bearer " + accessToken
-				st, body, err = request(http.MethodGet, checkV4URL, checkHeaders)
+				st, body, err = request(http.MethodGet, checkV4URL, checkHeaders, proxyURL)
 				if err != nil {
 					return nil, fmt.Errorf("请求 ChatGPT 失败: %v", err)
 				}
@@ -274,18 +292,18 @@ func Check(tokenInput string) (*Result, error) {
 
 	invoices := []map[string]interface{}{}
 	if accountID != "" {
-		invoices = fetchInvoices(accessToken, accountID)
+		invoices = fetchInvoices(accessToken, accountID, proxyURL)
 	}
 	return &Result{Summary: summary, Invoices: invoices}, nil
 }
 
-func fetchInvoices(accessToken, accountID string) []map[string]interface{} {
+func fetchInvoices(accessToken, accountID, proxyURL string) []map[string]interface{} {
 	st, body, err := request(http.MethodGet, invoicesURL+url.QueryEscape(accountID), map[string]string{
 		"Authorization": "Bearer " + accessToken,
 		"Accept":        "application/json",
 		"User-Agent":    ua,
 		"Referer":       "https://chatgpt.com/",
-	})
+	}, proxyURL)
 	if err != nil || st != http.StatusOK {
 		return nil
 	}

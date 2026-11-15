@@ -29,9 +29,6 @@ const (
 	settingSince = "card_delete_since"
 	// settingProxy 出口代理，如 http://user:pass@host:port（机房 IP 直连会被 Cloudflare 拦）
 	settingProxy = "card_delete_proxy"
-	// settingForceRefresh 删卡前是否强制用 ?refresh=true 换新 accessToken；
-	// 默认开（"1"），设为 "0" 即回退到「只有缺 AT 才刷新」的旧行为。
-	settingForceRefresh = "card_delete_force_refresh"
 )
 
 const (
@@ -189,28 +186,12 @@ func RunJob(jobID int64) {
 		return
 	}
 
-	// 支付 / 订阅激活会轮换 accessToken，库里存的 AT 往往在兑换完成时已经作废。
-	// 因此进任务先强制换一次新 AT；刷新失败时按原因分流，不再一律判 token_invalid。
-	if settingStr(settingForceRefresh, "1") != "0" || sess.AccessToken == "" {
-		if rerr := cli.Refresh(sess); rerr != nil {
-			if apiErr, ok := rerr.(*APIError); ok && apiErr.Cloudflare() {
-				// 出口被 Cloudflare 拦，与凭证无关
-				backoff(job, "cf_blocked")
-				return
-			}
-			if sess.AccessToken == "" {
-				// 没有旧 AT 可以退，只能判定凭证失效
-				job.SessionState = "invalid"
-				job.SessionCheckedAt = nowString()
-				fail(db.CardDeleteFailed, "token_invalid", 0)
-				return
-			}
-			// 手里还有旧 AT：降级用它试一次，别把一次刷新失败当成凭证失效
-			if apiErr, ok := rerr.(*APIError); ok && apiErr.Unauthorized() {
-				job.SessionState = "invalid"
-				job.SessionCheckedAt = nowString()
-			}
-			log.Printf("[card-delete] order=%d 刷新 AT 失败，降级用旧 AT 继续: %v", job.OrderID, rerr)
+	if sess.AccessToken == "" {
+		if err := cli.Refresh(sess); err != nil {
+			job.SessionState = "invalid"
+			job.SessionCheckedAt = nowString()
+			fail(db.CardDeleteFailed, "token_invalid", 0)
+			return
 		}
 	}
 
@@ -602,7 +583,7 @@ func queryWillRenew(s *Session) (willRenew bool, queried bool) {
 		})
 		input = string(b)
 	}
-	res, err := gptcheck.Check(input)
+	res, err := gptcheck.CheckWithProxy(input, strings.TrimSpace(settingStr(settingProxy, "")))
 	if err != nil || res == nil {
 		return false, false
 	}
