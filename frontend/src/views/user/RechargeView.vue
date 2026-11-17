@@ -511,6 +511,25 @@
             兑换未成功。若状态为 review / pending 请勿重复提交；可联系发码方或稍后用同一设备再查结果。
           </div>
 
+          <!-- 客户自过码（browser_native）：支付需要在本机完成人机/3DS 验证时才出现 -->
+          <section v-if="isNativeCaptcha" class="native-captcha">
+            <span class="native-captcha-badge">需要验证</span>
+            <p class="native-captcha-prompt">{{ t('nativeCaptcha.prompt') }}</p>
+            <!-- 180s 倒计时：到点禁用按钮并提示失效 -->
+            <div
+              v-if="captchaExpiresAt && !captchaTerminal"
+              class="native-captcha-count"
+              :class="{ 'is-timeout': captchaTimedOut }"
+            >
+              <template v-if="!captchaTimedOut">{{ t('nativeCaptcha.countdown', { s: captchaRemainSec }) }}</template>
+              <template v-else>{{ t('nativeCaptcha.timeout') }}</template>
+            </div>
+            <button type="button" class="btn-primary native-captcha-btn" :disabled="captchaDisabled" @click="startNativeCaptcha">
+              {{ captchaBusy ? t('nativeCaptcha.processing') : t('nativeCaptcha.button') }}
+            </button>
+            <div v-if="captchaError" class="alert alert-error native-captcha-error">{{ captchaError }}</div>
+          </section>
+
           <ol class="result-rail" aria-label="处理阶段">
             <li v-for="(s, i) in resultStages" :key="s.key" class="result-stage" :class="'is-' + s.state">
               <span class="result-dot">
@@ -735,6 +754,229 @@ const polling = ref(false)
 const showAllEvents = ref(false)
 let pollTimer: any = null
 const displayResultEmail = computed(() => resultEmail.value || account.value.email || '')
+
+// 客户自过码（browser_native，Design A）：上游 stage=native_captcha 时，
+// 让兑换者在自己浏览器里加载官方 Stripe.js 并对原 PaymentIntent 跑 handleNextAction。
+// ★clientSecret 只在内存里流转，绝不写 URL / localStorage / console★。
+//
+// ACC 契约（卡台透传）：
+//  - params.expiresAt：ms epoch，窗口 180 秒，到点即失效（未扣款）。
+//  - complete 回传 captcha:{granted,retryAllowed,attemptsLeft,exhausted,expired,piStatus}。
+//    granted=成功交付；retryAllowed=还能再试(共 1 次重试)；
+//    exhausted=两次都没过→本单终态失败(未扣款)；expired=180s 超时→终态(未扣款)。
+const captchaBusy = ref(false)
+const captchaError = ref('')
+const captchaTerminal = ref(false) // exhausted / expired：永久禁用按钮
+const captchaExpiresAt = ref(0) // ms epoch（上游 180s 窗口）
+const captchaNow = ref(Date.now())
+let captchaTimer: any = null
+const isNativeCaptcha = computed(
+  () => String(resultStage.value || '').toLowerCase() === 'native_captcha',
+)
+const captchaRemainSec = computed(() => {
+  if (!captchaExpiresAt.value) return 0
+  return Math.max(0, Math.ceil((captchaExpiresAt.value - captchaNow.value) / 1000))
+})
+const captchaTimedOut = computed(
+  () => captchaExpiresAt.value > 0 && captchaExpiresAt.value - captchaNow.value <= 0,
+)
+const captchaDisabled = computed(
+  () => captchaBusy.value || captchaTerminal.value || captchaTimedOut.value || isTerminal(resultStatus.value),
+)
+
+function startCaptchaTicker() {
+  if (captchaTimer) return
+  captchaNow.value = Date.now()
+  captchaTimer = setInterval(() => {
+    captchaNow.value = Date.now()
+    if (captchaTimedOut.value) stopCaptchaTicker()
+  }, 1000)
+}
+function stopCaptchaTicker() {
+  if (captchaTimer) {
+    clearInterval(captchaTimer)
+    captchaTimer = null
+  }
+}
+function resetCaptchaState() {
+  stopCaptchaTicker()
+  captchaBusy.value = false
+  captchaError.value = ''
+  captchaTerminal.value = false
+  captchaExpiresAt.value = 0
+}
+// expiresAt 可能是 ms 或 s；<1e12 视为秒，补成毫秒。
+function applyCaptchaExpiry(p: any) {
+  let exp = Number(p?.expiresAt ?? p?.expires_at ?? 0)
+  if (!Number.isFinite(exp) || exp <= 0) return
+  if (exp < 1e12) exp *= 1000
+  captchaExpiresAt.value = exp
+  startCaptchaTicker()
+}
+
+let stripeJsPromise: Promise<any> | null = null
+function loadStripeJs(): Promise<any> {
+  const w = window as any
+  if (w.Stripe) return Promise.resolve(w.Stripe)
+  if (stripeJsPromise) return stripeJsPromise
+  stripeJsPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector(
+      'script[src="https://js.stripe.com/v3/"]',
+    ) as HTMLScriptElement | null
+    if (existing) {
+      if (w.Stripe) return resolve(w.Stripe)
+      existing.addEventListener('load', () => resolve(w.Stripe))
+      existing.addEventListener('error', () => reject(new Error('stripe_js_load_failed')))
+      return
+    }
+    const s = document.createElement('script')
+    s.src = 'https://js.stripe.com/v3/'
+    s.async = true
+    s.onload = () => resolve(w.Stripe)
+    s.onerror = () => reject(new Error('stripe_js_load_failed'))
+    document.head.appendChild(s)
+  })
+  return stripeJsPromise
+}
+
+async function fetchCaptchaParams(): Promise<{ ok: boolean; p: any; msg?: string }> {
+  const tok = redemptionToken.value
+  const url = tok
+    ? '/api/v1/public/cdk/native-captcha/params?token=' + encodeURIComponent(tok)
+    : '/api/v1/public/cdk/native-captcha/params?code=' + encodeURIComponent(code.value.trim())
+  const { r, data } = await api(url)
+  if (!r.ok) return { ok: false, p: null, msg: data?.error || data?.msg || data?.message }
+  return { ok: true, p: (data && (data.data || data)) || {} }
+}
+
+// 进入 native_captcha 阶段后，预取一次仅为驱动倒计时；不保留 clientSecret（局部变量即弃）。
+async function prefetchCaptchaExpiry() {
+  try {
+    const res = await fetchCaptchaParams()
+    if (res.ok) applyCaptchaExpiry(res.p)
+  } catch {
+    /* best-effort：取不到就等用户点按钮时再取 */
+  }
+}
+
+watch(
+  isNativeCaptcha,
+  (v) => {
+    if (v) {
+      if (!captchaExpiresAt.value && !captchaTerminal.value) void prefetchCaptchaExpiry()
+    } else {
+      stopCaptchaTicker()
+    }
+  },
+  { immediate: true },
+)
+
+// 读 complete 回传的 captcha 判定，驱动按钮/提示状态。
+// ★卡台把判定【平铺】进 data（granted/retry_allowed/attempts_left/exhausted/expired），不是嵌套 captcha 对象★，
+// 且用 snake_case；这里读平铺并兼容 camelCase，避免对不上导致整段被跳过。
+function handleCaptchaResult(cdata: any) {
+  const d = (cdata && (cdata.data || cdata)) || null
+  if (!d || typeof d !== 'object') return
+  const granted = d.granted
+  const exhausted = d.exhausted
+  const expired = d.expired
+  const retryAllowed = d.retry_allowed ?? d.retryAllowed
+  const attemptsLeft = d.attempts_left ?? d.attemptsLeft
+  // 旧卡台无这些字段（全 undefined）：交给轮询收敛
+  if (granted === undefined && exhausted === undefined && expired === undefined && retryAllowed === undefined) return
+  if (granted) {
+    captchaError.value = ''
+    return
+  }
+  if (exhausted) {
+    captchaTerminal.value = true
+    stopCaptchaTicker()
+    captchaError.value = t('nativeCaptcha.exhausted')
+    return
+  }
+  if (expired) {
+    captchaTerminal.value = true
+    stopCaptchaTicker()
+    captchaError.value = t('nativeCaptcha.expiredResult')
+    return
+  }
+  if (retryAllowed) {
+    const n = Number(attemptsLeft)
+    captchaError.value =
+      Number.isFinite(n) && n > 0 ? t('nativeCaptcha.retry', { n }) : t('nativeCaptcha.failed')
+    return
+  }
+  // 无明确标志：不改按钮，等轮询
+}
+
+async function startNativeCaptcha() {
+  if (captchaDisabled.value) return
+  captchaError.value = ''
+  captchaBusy.value = true
+  // 过码期间暂停轮询，避免状态来回跳；结束后 startPoll() 恢复。
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+  polling.value = false
+  try {
+    const tok = redemptionToken.value
+    const params = await fetchCaptchaParams()
+    if (!params.ok) {
+      captchaError.value = params.msg || t('nativeCaptcha.loadFailed')
+      return
+    }
+    const p = params.p
+    applyCaptchaExpiry(p)
+    if (captchaTimedOut.value) {
+      captchaError.value = t('nativeCaptcha.timeout')
+      return
+    }
+    const pk = String(p.publishableKey || p.publishable_key || '')
+    const clientSecret = String(p.clientSecret || p.client_secret || '')
+    const piId = String(p.paymentIntentId || p.payment_intent_id || '')
+    if (!pk || !clientSecret) {
+      captchaError.value = t('nativeCaptcha.loadFailed')
+      return
+    }
+    const StripeCtor = await loadStripeJs()
+    if (typeof StripeCtor !== 'function') {
+      captchaError.value = t('nativeCaptcha.loadFailed')
+      return
+    }
+    const stripe = StripeCtor(pk)
+    // 本地跑 handleNextAction；无论本地成功/报错，都回传 complete，
+    // 由卡台(ACC)按 PI 真相计数（这是尝试次数/granted 的唯一真相源）。
+    try {
+      const retrieved = await stripe.retrievePaymentIntent(clientSecret)
+      const pi = retrieved?.paymentIntent
+      if (pi && piId && pi.id !== piId) {
+        // 安全中止：PI 不匹配不回传，不计失败次数。
+        captchaError.value = t('nativeCaptcha.mismatch')
+        return
+      }
+      if (pi && (pi.status === 'requires_action' || pi.status === 'requires_source_action')) {
+        await stripe.handleNextAction({ clientSecret })
+        await stripe.retrievePaymentIntent(clientSecret)
+      }
+    } catch {
+      /* 本地异常也回传 complete，由卡台核验 PI 真相 */
+    }
+    // 回传卡台推进订单（只带 token/code，绝不带 clientSecret）
+    const { data: cdata } = await api('/api/v1/public/cdk/native-captcha/complete', {
+      method: 'POST',
+      body: JSON.stringify(tok ? { token: tok } : { code: code.value.trim() }),
+    })
+    handleCaptchaResult(cdata)
+  } catch (e: any) {
+    captchaError.value = e && e.message ? String(e.message) : t('nativeCaptcha.failed')
+  } finally {
+    captchaBusy.value = false
+    // 恢复轮询，让后续状态（completed / declined 等）正常收敛；
+    // 终态(exhausted/expired)按钮由 captchaDisabled 维持禁用，不受轮询影响。
+    startPoll()
+  }
+}
 
 const PROGRESS_KEY = 'cdk_redeem_progress_v1'
 const nowTick = ref(Date.now())
@@ -1594,6 +1836,7 @@ async function api(path: string, init: RequestInit = {}) {
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
   if (nowTimer) clearInterval(nowTimer)
+  stopCaptchaTicker()
 })
 
 /** 完整 Session：必须含 sessionToken（JWE）；禁止纯 AT */
@@ -1889,6 +2132,7 @@ function resetAll() {
   timeline.value = []
   polling.value = false
   showAllEvents.value = false
+  resetCaptchaState()
   sessionFileName.value = ''
 }
 </script>
@@ -2125,6 +2369,49 @@ function resetAll() {
   white-space: nowrap;
 }
 .result-alert { margin-top: 18px; }
+
+/* ── 客户自过码（browser_native）：仅 stage=native_captcha 时出现 ────────── */
+.native-captcha {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--warn) 34%, var(--brd));
+  border-radius: 14px;
+  background: var(--warn-soft);
+}
+.native-captcha-badge {
+  justify-self: start;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  line-height: 22px;
+}
+.native-captcha-prompt {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+.native-captcha-count {
+  color: var(--warn);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+.native-captcha-count.is-timeout { color: var(--err); }
+.native-captcha-btn { justify-self: start; }
+.native-captcha-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.native-captcha-error { margin: 0; }
+@media (max-width: 640px) {
+  .native-captcha { padding: 14px; }
+  .native-captcha-btn { justify-self: stretch; width: 100%; }
+}
 
 .result-rail {
   display: grid;
