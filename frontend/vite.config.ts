@@ -12,6 +12,8 @@ import vue from '@vitejs/plugin-vue'
 // 直接白屏。它只依赖 vue / vue-router / stores/auth，与其它后台页不共享 chunk，排除是安全的。
 // ★注意★：moduleIds 里带 `SetupView.vue?vue&type=script…` 这类衍生 id，排除规则必须匹配
 // 查询串（`\?`），只用 `$` 锚定会漏掉，整块仍被判成管理端。
+// 上游在 v1.4.40（8b8c2d0）用同一思路补了这条例外；我们 v1.4.39.1 已提前修过并实测
+// `/assets/SetupView-*.js` 匿名 200，两种写法等价，本仓库保留更严格的 `(\?|$)` 版本。
 function isConsoleModule(id: string): boolean {
   if (/[\\/]src[\\/]views[\\/]admin[\\/]SetupView\.vue(\?|$)/.test(id)) return false
   return /[\\/]src[\\/](views[\\/]admin[\\/]|components[\\/]admin[\\/]|layouts[\\/]AdminLayout\.vue)/.test(id)
